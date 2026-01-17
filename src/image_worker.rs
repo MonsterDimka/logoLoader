@@ -1,22 +1,25 @@
+use crate::{DOWNLOAD_FOLDER, LogoJob, RESULT_FOLDER, UPSCALE_FOLDER};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use futures::future::join_all;
+use image::{DynamicImage, GenericImageView, ImageReader, RgbImage, RgbaImage};
+use indicatif::ProgressBar;
+use kmeans_colors::{Sort, get_kmeans};
+use log::{error, info};
+use oxipng::{Options, optimize_from_memory};
+use palette::cast::from_component_slice;
+use palette::{IntoColor, Lab, Srgb};
 use std::error::Error;
 use std::path::Path;
-use indicatif::ProgressBar;
-use futures::future::join_all;
-use log::{error, info};
-use palette::{IntoColor, Lab, Srgb};
-use image::{DynamicImage, GenericImageView, ImageReader, Pixel, RgbImage, RgbaImage};
-use vtracer::{Config, SvgFile};
-use visioncortex::{PathSimplifyMode, ColorImage };
-use oxipng::{optimize_from_memory, Options};
-use base64::engine::general_purpose::STANDARD as BASE64;
-use palette::cast::from_component_slice;
-use kmeans_colors::{get_kmeans, Sort};
-use base64::Engine;
-use crate::{LogoJob, DOWNLOAD_FOLDER, RESULT_FOLDER, UPSCALE_FOLDER, VECTOR_FOLDER};
-use regex::Regex;
+use visioncortex::{ColorImage, PathSimplifyMode, PointF64};
+use vtracer::Config;
 
+const WIDTH_HEIGHT: usize = 300;
+const MAX_VECTOR_LOGO_SIZE: usize = 90;
 
-pub async fn images_works_parallel(logos: Vec<LogoJob>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn images_works_parallel(
+    logos: Vec<LogoJob>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let bar = ProgressBar::new(logos.len() as u64);
 
     let mut tasks = Vec::new();
@@ -53,15 +56,16 @@ pub async fn images_works_parallel(logos: Vec<LogoJob>) -> Result<(), Box<dyn Er
 
 async fn process_single_logo(logo: LogoJob, task: i32) -> Result<(), Box<dyn Error + Send + Sync>> {
     let gray_background_color = Srgb::new(238, 237, 241);
-    let id  = logo.id;
+    let id = logo.id;
 
     // Загружаем изображения
     let small_image_name = format!("{}/{}.jpg", DOWNLOAD_FOLDER, id);
     let big_image_name = format!("{}/{}.png", UPSCALE_FOLDER, id);
-    let vector_image_name = format!("{}/{}.svg", VECTOR_FOLDER, id);
 
-    info!("{} Таска обработки начата. Задача:{} Файлы для обработки: {} {}", task, id, small_image_name, big_image_name);
-
+    info!(
+        "{} Таска обработки начата. Задача:{} Файлы для обработки: {} {}",
+        task, id, small_image_name, big_image_name
+    );
 
     let small_rgb_image = load_image(&small_image_name)?.to_rgb8();
     let big_rgba_image = load_image(&big_image_name)?.to_rgba8();
@@ -76,20 +80,29 @@ async fn process_single_logo(logo: LogoJob, task: i32) -> Result<(), Box<dyn Err
     }
 
     // Выбор цвета фона
-    let background_color = if average > 250 { gray_background_color } else { color };
+    let background_color = if average > 250 {
+        gray_background_color
+    } else {
+        color
+    };
 
     // Формирование имени SVG файла
     let percent = (score * 100.0) as u16;
     let new_image_name = format!("{}/{}.svg", RESULT_FOLDER, id);
 
     // Логирование
-    info!("{} Доминирующий цвет: RGB({} {} {})  Всего: {}%",
-              small_image_name, color.red, color.green, color.blue, percent);
+    info!(
+        "{} Доминирующий цвет: RGB({} {} {})  Всего: {}%",
+        small_image_name, color.red, color.green, color.blue, percent
+    );
 
     // Создание SVG
-    let _ = save_svg_image(processed_image, id, background_color, &new_image_name, true);
+    let _ = save_ready_logo(processed_image, id, background_color, &new_image_name, true);
 
-    info!("{} Таска закончена. Задача:{} Файлы для обработки: {} {} Cохранение {}", task, id, small_image_name, big_image_name, new_image_name);
+    info!(
+        "{} Таска закончена. Задача:{} Файлы для обработки: {} {} Cохранение {}",
+        task, id, small_image_name, big_image_name, new_image_name
+    );
     Ok(())
 }
 
@@ -97,8 +110,9 @@ fn remove_image_background(color: Srgb<u8>, big_rgba_image: &mut RgbaImage) {
     big_rgba_image.pixels_mut().for_each(|p| {
         let alpha = if in_range(p[0], color.red, 30)
             && in_range(p[1], color.green, 30)
-            && in_range(p[2], color.blue, 30) {
-            0  // Почти белые пиксели прозрачны
+            && in_range(p[2], color.blue, 30)
+        {
+            0 // Почти белые пиксели прозрачны
         } else {
             u8::MAX
         };
@@ -106,78 +120,63 @@ fn remove_image_background(color: Srgb<u8>, big_rgba_image: &mut RgbaImage) {
     });
 }
 
-fn save_svg_image(
+const KILOBYTE: usize = 1024;
+const PNG_OPTIMIZE: u8 = 4;
+
+fn save_ready_logo(
     image: RgbaImage,
     job_id: u32,
     background_color: Srgb<u8>,
     image_name: &str,
-    optimize: bool
+    optimize: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let dimage = DynamicImage::ImageRgba8(image.clone());
     let output_path = Path::new(&image_name);
-    const WIDTH_HEIGHT: usize = 300;
-    const XML_HEADER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>"#;
-
     // Конвертируем изображение в PNG bytes
     let mut png_bytes = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut png_bytes);
     dimage.write_to(&mut cursor, image::ImageFormat::Png)?;
 
     // Векторизуем
-    let svg_content = image_vectorize_to_svg(&image)?;
+    let svg_logo = image_vectorize_to_svg(&image)?;
 
-
-    let result = if  svg_content.len()/1024 < 90  {
-        let new_svg = svg_content.replace(XML_HEADER, "");
-        // Создаем регулярное выражение
-        let re = Regex::new(r#"width="(\d+)"#).unwrap();
-
-        let mut scale = 0.25;
-
-        if let Some(captures) = re.captures(new_svg.as_str()) {
-            if let Some(width_str) = captures.get(1) {
-                if let Ok(width) = width_str.as_str().parse::<f64>() {
-                    println!("Found width: {}", width);
-                    scale = WIDTH_HEIGHT as f64 / width;
-                }
-            }
-        }
-
-
+    // Если векторизация большого размера используем PNG
+    let result = if svg_logo.len() / KILOBYTE < MAX_VECTOR_LOGO_SIZE {
         format!(
-        r#"<!-- SVG как base64 -->
-    <g transform="scale({:.2})">{new_svg}"</g>"#, scale)
+            r#"<!-- Curved SVG  -->
+            {svg_logo}"#
+        )
     } else {
         // Кодируем в base64
         let base64_image = if optimize {
             // Optimize the PNG data in memory
-            let options = Options::from_preset(4);
+            let options = Options::from_preset(PNG_OPTIMIZE);
             let optimized_png_data = optimize_from_memory(&png_bytes, &options)?;
             BASE64.encode(&optimized_png_data)
-        } else { BASE64.encode(&png_bytes) };
+        } else {
+            BASE64.encode(&png_bytes)
+        };
 
         format!(
-            r#"<!-- PNG как base64 -->
+            r#"<!-- PNG RGBA as Base64 -->
     <image width="100%" height="100%" id="logo_image"
            preserveAspectRatio="xMidYMid meet"
-           xlink:href="data:image/png;base64,{base64_image}"/>"#)
+           xlink:href="data:image/png;base64,{base64_image}"/>"#
+        )
     };
-
-    // <image width="100%" height="100%" id="logo_image"
-    // preserveAspectRatio="xMidYMid meet"
-    // xlink:href="data:image/svg+xml;base64,{base64_svg}"/>"#)
 
     // Создаем SVG
     let svg_content = format!(
-        r#"{XML_HEADER}
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <svg width="{WIDTH_HEIGHT}" height="{WIDTH_HEIGHT}"
      xmlns="http://www.w3.org/2000/svg"
      xmlns:xlink="http://www.w3.org/1999/xlink">
     <title>{job_id}</title>
-    <!-- Фон -->
+    <!-- Background -->
     <rect width="100%" height="100%" id="Задник"
           fill="rgb({r},{g},{b})"/>
 
+    <!-- Logo -->
     {result}
 </svg>"#,
         r = background_color.red,
@@ -195,7 +194,7 @@ fn save_svg_image(
 }
 
 /// Попадает ли цвет в доминирующий
-fn in_range(value: u8, dominant: u8, tolerance: u8 ) -> bool {
+fn in_range(value: u8, dominant: u8, tolerance: u8) -> bool {
     let lower_bound = dominant.saturating_sub(tolerance);
     let upper_bound = dominant.saturating_add(tolerance);
     value >= lower_bound && value <= upper_bound
@@ -224,10 +223,11 @@ fn dominant_colors(rgb_img: RgbImage) -> Result<(Srgb<u8>, f32, u8), Box<dyn Err
     // Извлечение доминантного цвета
     let dominant = colors.first().ok_or("No clusters found")?;
     let dominant_rgb = Srgb::from_linear(dominant.centroid.into_color());
-    let dominant_color_average = ((f64::from(dominant_rgb.red) +
-        f64::from(dominant_rgb.green) +
-        f64::from(dominant_rgb.blue)) / 3.0).round() as u8;
-
+    let dominant_color_average = ((f64::from(dominant_rgb.red)
+        + f64::from(dominant_rgb.green)
+        + f64::from(dominant_rgb.blue))
+        / 3.0)
+        .round() as u8;
 
     Ok((dominant_rgb, dominant.percentage, dominant_color_average))
 }
@@ -244,14 +244,17 @@ fn load_image(image_name: &str) -> Result<DynamicImage, Box<dyn Error + Send + S
     let (imgx, imgy) = image.dimensions();
 
     // Логирование
-    info!("Загружена картинка: {} Размер картинки {}x{} формат", image_name, imgx, imgy);
+    info!(
+        "Загружена картинка: {} Размер картинки {}x{} формат",
+        image_name, imgx, imgy
+    );
     Ok(image)
 }
 
 fn image_vectorize_to_svg(rgba_img: &RgbaImage) -> Result<String, String> {
     let convert_config = Config {
-        color_mode: vtracer::ColorMode::Color,  // or another ColorMode variant
-        hierarchical: vtracer::Hierarchical::Stacked,  // or another Hierarchical variant
+        color_mode: vtracer::ColorMode::Color, // or another ColorMode variant
+        hierarchical: vtracer::Hierarchical::Stacked, // or another Hierarchical variant
         filter_speckle: 16,
         color_precision: 5,
         layer_difference: 16,
@@ -271,39 +274,36 @@ fn image_vectorize_to_svg(rgba_img: &RgbaImage) -> Result<String, String> {
     };
 
     // Convert the image to SVG
-    let svg = vtracer::convert(
-        color_image,
-        convert_config
-    );
+    let svg = vtracer::convert(color_image, convert_config);
 
     let out_svg = match svg {
         Ok(file) => file,
         Err(_) => return Err(String::from("Cannot create output file.")),
     };
 
-    Ok(out_svg.to_string())
+    let scale_x = WIDTH_HEIGHT as f64 / width as f64;
+    let scale_y = WIDTH_HEIGHT as f64 / height as f64;
+    let scale = scale_x.max(scale_y);
 
+    let mut svg_string = String::new();
+    svg_string.push_str(&format!(r#"<g transform="scale({:.2})">"#, scale));
+
+    for svg_path in &out_svg.paths {
+        let (string, offset) =
+            svg_path
+                .path
+                .to_svg_string(true, PointF64::default(), out_svg.path_precision);
+        svg_string.push_str(&format!(
+            "<path d=\"{}\" fill=\"{}\" transform=\"translate({},{})\"/>",
+            string,
+            svg_path.color.to_hex_string(),
+            offset.x,
+            offset.y
+        ));
+    }
+
+    svg_string.push_str("</g>");
+
+    // Ok(out_svg.to_string())
+    Ok(svg_string)
 }
-
-
-// impl vtracer::Display for SvgFile {
-//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-//         writeln!(f, r#"<?xml version="1.0" encoding="UTF-8"?>"#)?;
-//         writeln!(
-//             f,
-//             r#"<!-- Generator: visioncortex VTracer {} -->"#,
-//             env!("CARGO_PKG_VERSION")
-//         )?;
-//         writeln!(
-//             f,
-//             r#"<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">"#,
-//             self.width, self.height
-//         )?;
-//
-//         for path in &self.paths {
-//             path.fmt_with_precision(f, self.path_precision)?;
-//         }
-//
-//         writeln!(f, "</svg>")
-//     }
-// }

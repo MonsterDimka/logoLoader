@@ -1,60 +1,75 @@
+use chrono::Local;
+use clap::Parser;
+use log::info;
+use std::error::Error;
 use std::fs;
 use std::path::Path;
-use std::error::Error;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use std::process::Command;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use palette::{IntoColor, Lab, Srgb};
-use palette::cast::from_component_slice;
-use std::process::Command;
-use image::{DynamicImage, GenericImageView, ImageReader, RgbImage, RgbaImage};
-use kmeans_colors::{get_kmeans, Sort};
-use oxipng::{optimize_from_memory, Options};
-use indicatif::ProgressBar;
-use log::{error, info};
-use fern::Dispatch;
-use chrono::Local;
-use tokio::task;
-use futures::future::join_all;
-use vtracer::{convert_image_to_svg, Config};
-use visioncortex::PathSimplifyMode;
 
 mod image_worker;
 
+const BASE_PATH: &str = "/Users/kapustindmitri/RustroverProjects/logoLoader/";
 const JSON_FILE_PATH: &str = "export_logo_16.01.26_2.json";
 const DOWNLOAD_FOLDER: &str = "Logo/Raw";
 const UPSCALE_FOLDER: &str = "Logo/Upscale";
-const VECTOR_FOLDER: &str = "Logo/Vector";
 const LOG_FILE: &str = "logo.log";
-
 const RESULT_FOLDER: &str = "Logo/Result";
-
+const DOWNLOAD: bool = false;
+const UPSCALE: bool = false;
 
 #[derive(Debug, serde::Deserialize, Clone)]
 struct LogoJob {
     url: String,
     id: u32,
-    created: String,
+}
+
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// JSON file with logos job
+    #[arg(short, long, default_value_t = JSON_FILE_PATH.to_string())]
+    job: String,
+
+    /// PNG optimization level
+    #[arg(short, long, default_value_t = BASE_PATH.to_string())]
+    out_dir: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let args = Args::parse();
+    let job_path = Path::new(&args.job);
+    let out_dir_path = Path::new(&args.out_dir);
+
     // Инициализация лога
-    setup_logger()?;
+    println!("Инициализация лога");
+    let _ = setup_logger(&Path::new(&args.out_dir).join(LOG_FILE));
 
     // Скачка задания
-    let logos = load_jobs(JSON_FILE_PATH)?;
+    println!("Скачка задания {}", job_path.to_str().unwrap());
+    let logos = load_job(JSON_FILE_PATH)?;
 
     // Создаем папки одним вызовом для каждой
-    for folder in &[DOWNLOAD_FOLDER, UPSCALE_FOLDER, RESULT_FOLDER, VECTOR_FOLDER] {
+    println!(
+        "Создаем папки одним вызовом для каждой: {}",
+        out_dir_path.to_str().unwrap()
+    );
+    for folder in &[DOWNLOAD_FOLDER, UPSCALE_FOLDER, RESULT_FOLDER] {
         create_dir(*folder)?;
     }
 
-    // Скачка файлов
-    // download_images(logos.clone()).await;
+    // Скачка файлов задания
+    if DOWNLOAD {
+        download_images(logos.clone()).await;
+    }
 
     // Увеличение разрешения файлов
-    // upscale_images().await?;
+    if UPSCALE {
+        upscale_images().await?;
+    }
 
     // Обработка файлов
     image_worker::images_works_parallel(logos).await?;
@@ -63,9 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 // Загрузка задачи по созданию логотипов
-fn load_jobs(json_file_path: &str) -> Result<Vec<LogoJob>, Box<dyn Error + Send + Sync>> {
+fn load_job(json_file_path: &str) -> Result<Vec<LogoJob>, Box<dyn Error + Send + Sync>> {
     let json_content = fs::read_to_string(json_file_path)?;
-
     let logos: Vec<LogoJob> = serde_json::from_str(&json_content)?;
     info!("Загружено заданий {}", logos.len());
     Ok(logos)
@@ -91,8 +105,11 @@ async fn download_images(logos: Vec<LogoJob>) {
     for logo in logos {
         tasks.push(tokio::spawn(async move {
             let filename = format!("{}/{}{}", DOWNLOAD_FOLDER, logo.id, FILE_EXTENSION);
-            let _ = get_image_by_job( &logo.url, &filename).await;
-            info!("{} Файл '{}' -> {} успешно скачан", counter, logo.url, filename);
+            let _ = get_image_by_job(&logo.url, &filename).await;
+            info!(
+                "{} Файл '{}' -> {} успешно скачан",
+                counter, logo.url, filename
+            );
         }));
         counter += 1;
     }
@@ -111,7 +128,11 @@ async fn get_image_by_job(url: &str, out: &str) -> Result<(), Box<dyn Error + Se
         let mut file = File::create(out).await?;
         file.write_all(&bytes).await?;
     } else {
-        println!("Ошибка загрузки '{}'. Код статуса: {}", url, response.status());
+        println!(
+            "Ошибка загрузки '{}'. Код статуса: {}",
+            url,
+            response.status()
+        );
     }
 
     Ok(())
@@ -144,8 +165,8 @@ async fn upscale_images() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     const UPSCALER_PROG: &str = "/Applications/Upscayl.app/Contents/Resources/bin/upscayl-bin";
     const MODEL_PATH: &str = "/Applications/Upscayl.app/Contents/Resources/models";
     const MODEL_NAME: &str = "upscayl-standard-4x";
-    const SCALE: usize  = 4;
-    const COMPRESSION: usize  = 100;
+    const SCALE: usize = 4;
+    const COMPRESSION: usize = 100;
     const TYPE: &str = "png";
 
     let status = Command::new(UPSCALER_PROG)
@@ -176,8 +197,8 @@ async fn upscale_images() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     Ok(())
 }
 
-fn setup_logger() -> Result<(), fern::InitError> {
-    Dispatch::new()
+fn setup_logger(log_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "[{} {} {}] {}",
@@ -188,7 +209,7 @@ fn setup_logger() -> Result<(), fern::InitError> {
             ))
         })
         .level(log::LevelFilter::Info)
-        .chain(fern::log_file(LOG_FILE)?)
+        .chain(fern::log_file(log_file)?)
         .apply()?;
     Ok(())
 }
