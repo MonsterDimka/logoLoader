@@ -8,10 +8,13 @@ use std::process::Command;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
+mod background_works;
 mod image_worker;
+mod save;
+mod vectorize;
 
 const BASE_PATH: &str = "/Users/kapustindmitri/RustroverProjects/logoLoader/";
-const JSON_FILE_PATH: &str = "export_logo_16.01.26_2.json";
+const JSON_FILE_PATH: &str = "export_logo_19.01.26.json";
 const DOWNLOAD_FOLDER: &str = "Logo/Raw";
 const UPSCALE_FOLDER: &str = "Logo/Upscale";
 const LOG_FILE: &str = "logo.log";
@@ -39,7 +42,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = Args::parse();
     let job_path = Path::new(&args.job);
     let out_dir_path = Path::new(&args.out_dir);
@@ -138,7 +141,7 @@ async fn get_image_by_job(url: &str, out: &str) -> Result<(), Box<dyn Error + Se
     Ok(())
 }
 
-async fn upscale_images() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn upscale_images() -> Result<(), Box<dyn Error + Send + Sync>> {
     // Usage: upscayl-bin -i infile -o outfile [options]...
     //
     //     -h                   show this help
@@ -197,7 +200,7 @@ async fn upscale_images() -> Result<(), Box<dyn std::error::Error + Send + Sync>
     Ok(())
 }
 
-fn setup_logger(log_file: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn setup_logger(log_file: &Path) -> Result<(), Box<dyn Error>> {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
