@@ -12,71 +12,75 @@ pub struct DominantColor {
     pub average: u8,
 }
 
-pub fn remove_image_background(big_rgba_image: &mut RgbaImage, remove_color: Srgb<u8>) {
-    const TOLERANCE: u8 = 30;
-    const NO_TRANSPARENCY: u8 = 255;
-    const TRANSPARENCY: u8 = 0;
+impl DominantColor {
+    pub fn remove_image_background(&self, big_rgba_image: &mut RgbaImage) {
+        const TOLERANCE: u8 = 30;
+        const NO_TRANSPARENCY: u8 = 255;
+        const TRANSPARENCY: u8 = 0;
 
-    let r = remove_color.red;
-    let g = remove_color.green;
-    let b = remove_color.blue;
+        let r = self.color.red;
+        let g = self.color.green;
+        let b = self.color.blue;
 
-    // Предвычисляем границы
-    let (r_low, r_high) = (r.saturating_sub(TOLERANCE), r.saturating_add(TOLERANCE));
-    let (g_low, g_high) = (g.saturating_sub(TOLERANCE), g.saturating_add(TOLERANCE));
-    let (b_low, b_high) = (b.saturating_sub(TOLERANCE), b.saturating_add(TOLERANCE));
+        // Предвычисляем границы
+        let (r_low, r_high) = (r.saturating_sub(TOLERANCE), r.saturating_add(TOLERANCE));
+        let (g_low, g_high) = (g.saturating_sub(TOLERANCE), g.saturating_add(TOLERANCE));
+        let (b_low, b_high) = (b.saturating_sub(TOLERANCE), b.saturating_add(TOLERANCE));
 
-    // Используем прямой доступ к данным
-    let pixels = big_rgba_image.as_mut();
-    for pixel in pixels.chunks_exact_mut(4) {
-        let is_in_range = pixel[0] >= r_low
-            && pixel[0] <= r_high
-            && pixel[1] >= g_low
-            && pixel[1] <= g_high
-            && pixel[2] >= b_low
-            && pixel[2] <= b_high;
-        pixel[3] = if is_in_range {
-            TRANSPARENCY
-        } else {
-            NO_TRANSPARENCY
-        };
+        // Используем прямой доступ к данным
+        let pixels = big_rgba_image.as_mut();
+        for pixel in pixels.chunks_exact_mut(4) {
+            let is_in_range = pixel[0] >= r_low
+                && pixel[0] <= r_high
+                && pixel[1] >= g_low
+                && pixel[1] <= g_high
+                && pixel[2] >= b_low
+                && pixel[2] <= b_high;
+            pixel[3] = if is_in_range {
+                TRANSPARENCY
+            } else {
+                NO_TRANSPARENCY
+            };
+        }
     }
-}
 
-/// Вычисление доминирующего цвета
-pub fn dominant_colors(rgb_img: RgbImage) -> Result<DominantColor, Box<dyn Error + Send + Sync>> {
-    // Конвертация в Lab для лучшей кластеризации
-    let lab_pixels: Vec<Lab> = from_component_slice::<Srgb<u8>>(&rgb_img)
-        .iter()
-        .map(|&srgb| srgb.into_linear().into_color())
-        .collect();
+    /// Вычисление доминирующего цвета
+    pub fn from_rgb_image(
+        rgb_img: RgbImage,
+    ) -> Result<DominantColor, Box<dyn Error + Send + Sync>> {
+        // Конвертация в Lab для лучшей кластеризации
+        let lab_pixels: Vec<Lab> = from_component_slice::<Srgb<u8>>(&rgb_img)
+            .iter()
+            .map(|&srgb| srgb.into_linear().into_color())
+            .collect();
 
-    // Параметры кластеризации
-    const K: usize = 5;
-    const MAX_ITER: usize = 100;
-    const CONVERGE: f32 = 1.0;
+        // Параметры кластеризации
+        const K: usize = 5;
+        const MAX_ITER: usize = 100;
+        const CONVERGE: f32 = 1.0;
 
-    // K-means кластеризация
-    let result = get_kmeans(K, MAX_ITER, CONVERGE, false, &lab_pixels, 0);
+        // K-means кластеризация
+        let result = get_kmeans(K, MAX_ITER, CONVERGE, false, &lab_pixels, 0);
 
-    // Сортировка по доминированию
-    let mut colors = Lab::sort_indexed_colors(&result.centroids, &result.indices);
-    colors.sort_unstable_by(|a, b| b.percentage.total_cmp(&a.percentage));
+        // Сортировка по доминированию
+        let mut colors = Lab::sort_indexed_colors(&result.centroids, &result.indices);
+        colors.sort_unstable_by(|a, b| b.percentage.total_cmp(&a.percentage));
 
-    // Извлечение доминантного цвета
-    let dominant = colors.first().ok_or("No clusters found")?;
-    let dominant_rgb = Srgb::from_linear(dominant.centroid.into_color());
-    let dominant_color_average = ((f64::from(dominant_rgb.red)
-        + f64::from(dominant_rgb.green)
-        + f64::from(dominant_rgb.blue))
-        / 3.0)
-        .round() as u8;
+        // Извлечение доминантного цвета
+        let dominant = colors.first().ok_or("No clusters found")?;
+        let dominant_rgb = Srgb::from_linear(dominant.centroid.into_color());
+        let dominant_color_average = ((f64::from(dominant_rgb.red)
+            + f64::from(dominant_rgb.green)
+            + f64::from(dominant_rgb.blue))
+            / 3.0)
+            .round() as u8;
 
-    Ok(DominantColor {
-        color: dominant_rgb,
-        score: dominant.percentage,
-        average: dominant_color_average,
-    })
+        Ok(DominantColor {
+            color: dominant_rgb,
+            score: dominant.percentage,
+            average: dominant_color_average,
+        })
+    }
 }
 
 // Обрезка прозрачных краев изображения

@@ -1,6 +1,7 @@
 use chrono::Local;
 use clap::Parser;
 use log::info;
+use serde::Deserialize;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -10,11 +11,12 @@ use tokio::io::AsyncWriteExt;
 
 mod background_works;
 mod image_worker;
+mod loaders;
 mod save;
 mod vectorize;
 
 const BASE_PATH: &str = "/Users/kapustindmitri/RustroverProjects/logoLoader/";
-const JSON_FILE_PATH: &str = "export_logo_19.01.26.json";
+const JSON_FILE_PATH: &str = "export_logo_20.01.26.json";
 const DOWNLOAD_FOLDER: &str = "Logo/Raw";
 const UPSCALE_FOLDER: &str = "Logo/Upscale";
 const LOG_FILE: &str = "logo.log";
@@ -22,7 +24,7 @@ const RESULT_FOLDER: &str = "Logo/Result";
 const DOWNLOAD: bool = false;
 const UPSCALE: bool = false;
 
-#[derive(Debug, serde::Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 struct LogoJob {
     url: String,
     id: u32,
@@ -39,6 +41,13 @@ struct Args {
     /// PNG optimization level
     #[arg(short, long, default_value_t = BASE_PATH.to_string())]
     out_dir: String,
+
+    #[arg(long, default_value_t = DOWNLOAD)]
+    download: bool,
+
+    /// Whether to upscale images
+    #[arg(long, default_value_t = UPSCALE)]
+    upscale: bool,
 }
 
 #[tokio::main]
@@ -53,10 +62,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     // Скачка задания
     println!("Скачка задания {}", job_path.to_str().unwrap());
-    let logos = load_job(JSON_FILE_PATH)?;
+    // let logos = load_job(JSON_FILE_PATH)?;
+    let logos = loaders::load_json_job("test_save.json")?;
 
     // Создаем папки одним вызовом для каждой
-    println!(
+    info!(
         "Создаем папки одним вызовом для каждой: {}",
         out_dir_path.to_str().unwrap()
     );
@@ -65,12 +75,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     // Скачка файлов задания
-    if DOWNLOAD {
+    if args.download {
         download_images(logos.clone()).await;
     }
 
     // Увеличение разрешения файлов
-    if UPSCALE {
+    if args.upscale {
         upscale_images().await?;
     }
 
@@ -78,14 +88,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     image_worker::images_works_parallel(logos).await?;
 
     Ok(())
-}
-
-// Загрузка задачи по созданию логотипов
-fn load_job(json_file_path: &str) -> Result<Vec<LogoJob>, Box<dyn Error + Send + Sync>> {
-    let json_content = fs::read_to_string(json_file_path)?;
-    let logos: Vec<LogoJob> = serde_json::from_str(&json_content)?;
-    info!("Загружено заданий {}", logos.len());
-    Ok(logos)
 }
 
 // Создать директорию если ее не существует

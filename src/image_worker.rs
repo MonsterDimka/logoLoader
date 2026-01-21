@@ -1,7 +1,7 @@
 use crate::background_works::DominantColor;
 use crate::{DOWNLOAD_FOLDER, LogoJob, RESULT_FOLDER, UPSCALE_FOLDER, background_works, save};
 use futures::future::join_all;
-use image::{DynamicImage, GenericImageView, ImageReader};
+use image::{DynamicImage, GenericImageView, ImageBuffer, ImageReader, Rgb, Rgba};
 use indicatif::ProgressBar;
 use log::{error, info};
 use palette::Srgb;
@@ -62,15 +62,15 @@ async fn process_single_logo(logo: LogoJob, task: i32) -> Result<(), Box<dyn Err
 
     // Загружаем изображения
     let small_rgb_image = load_image(&small_image_name)?.to_rgb8();
+    // Получение доминирующего в изображении цвета (цвета фона)
+    let background = DominantColor::from_rgb_image(small_rgb_image)?;
+
     let big_rgba_image = load_image(&big_image_name)?.to_rgba8();
     let mut final_image = big_rgba_image;
 
-    // Получение доминирующего в изображении цвета (цвета фона)
-    let background = background_works::dominant_colors(small_rgb_image)?;
-
     // Удаление фона
     if background.score > MIN_SCORE_DOMINANT_COLOR {
-        background_works::remove_image_background(&mut final_image, background.color);
+        background.remove_image_background(&mut final_image);
         final_image = background_works::trim_transparent_border(&mut final_image);
     }
 
@@ -117,6 +117,30 @@ fn load_image(image_name: &str) -> Result<DynamicImage, Box<dyn Error + Send + S
     let image = ImageReader::open(image_name)?
         .with_guessed_format()?
         .decode()?;
+
+    // Проверяем, есть ли альфа-канал и конвертируем в RGB если нужно
+    let image = match image {
+        DynamicImage::ImageRgba8(rgba_image) => {
+            // Конвертируем RGBA в RGB с белым фоном
+            let (width, height) = rgba_image.dimensions();
+            let mut rgb_image = ImageBuffer::new(width, height);
+
+            for (x, y, pixel) in rgba_image.enumerate_pixels() {
+                let Rgba([r, g, b, a]) = pixel;
+                if *a == 255 {
+                    // Полностью непрозрачный - просто копируем RGB
+                    rgb_image.put_pixel(x, y, Rgb([*r, *g, *b]));
+                } else {
+                    rgb_image.put_pixel(x, y, Rgb([255, 255, 255]));
+                }
+            }
+            DynamicImage::ImageRgb8(rgb_image)
+        }
+
+        // Для остальных типов изображений (RGB, Gray, etc.) оставляем как есть
+        _ => image,
+    };
+
     let (width, height) = image.dimensions();
 
     // Логирование

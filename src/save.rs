@@ -23,59 +23,48 @@ pub fn save_ready_logo(
 ) -> Result<(), Box<dyn Error>> {
     let base64_png_logo = make_png_base64(&image, optimize)?;
     let vector_svg_logo = vectorize::image_vectorize_to_svg(&image)?;
-
-    let (width, height) = (image.width() as usize, image.height() as usize);
-
-    let scale_x = WIDTH_HEIGHT as f64 / width as f64;
-    let scale_y = WIDTH_HEIGHT as f64 / height as f64;
-    let mut scale = scale_x.min(scale_y) * LOGO_SCALE_FACTOR;
-
-    let scaled_width = width as f64 * scale;
-    let scaled_height = height as f64 * scale;
-
-    // let mut scaled_width = (width as f64 * LOGO_SCALE_FACTOR) as i32;
-    // let mut scaled_height = (height as f64 * LOGO_SCALE_FACTOR) as i32;
-    let mut offset_x = (WIDTH_HEIGHT as f64 - scaled_width) / 2.0;
-    let mut offset_y = (WIDTH_HEIGHT as f64 - scaled_height) / 2.0;
-
-    println!(
-        "Размер подрезанный: {} {}  Сжатый размер: {:.2} {:.2}  Смещение: {:.2} {:.2} Итоговое сжатие: {:.2}",
-        width, height, scaled_width, scaled_height, offset_x, offset_y, scale
-    );
+    let should_use_vector = vector_svg_logo.len() / KILOBYTE < MAX_VECTOR_LOGO_SIZE;
 
     // Если векторизация большого размера используем PNG
-    let logo_svg = if vector_svg_logo.len() / KILOBYTE < MAX_VECTOR_LOGO_SIZE {
+    let logo_svg = if should_use_vector {
+        let transform = LogoTransform::calculate_transform(&image, image_file_name);
+
         format!(
             r#"<!-- Curved SVG  -->
-            <g transform="translate({offset_x:.2}, {offset_y:.2}) scale({scale:.2})">
-            {vector_svg_logo}</g>"#
+<g transform="translate({offset_x:.2}, {offset_y:.2}) scale({scale:.2})">
+            {vector_svg_logo}
+</g>"#,
+            offset_x = transform.offset_x,
+            offset_y = transform.offset_y,
+            scale = transform.scale
         )
     } else {
-        (scale, offset_x, offset_y) = if background_color.score < 0.5 {
-            (1.0, 0.0, 0.0)
+        let transform = if background_color.score < 0.5 {
+            LogoTransform::full_size()
         } else {
-            (LOGO_SCALE_FACTOR, offset_x, offset_y)
+            LogoTransform::calculate_png_transform(&image, image_file_name)
+            // (LOGO_SCALE_FACTOR, offset_x, offset_y)
         };
         format!(
             r#"<!-- PNG RGBA as Base64 -->
-            <g transform="translate({offset_x:.2}, {offset_y:.2}) scale({scale:.2})">
+<g transform="translate({offset_x:.2}, {offset_y:.2}) scale({scale:.2})">
     <image width="100%" height="100%" id="logo_image"
-           preserveAspectRatio="xMidYMid meet"
-           xlink:href="data:image/png;base64,{base64_png_logo}"/></g>"#
+                        preserveAspectRatio="xMidYMid meet"
+                        xlink:href="data:image/png;base64,{base64_png_logo}"/>
+</g>"#,
+            offset_x = transform.offset_x,
+            offset_y = transform.offset_y,
+            scale = transform.scale
         )
     };
 
     // Создаем SVG
     let svg_file = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
-<svg width="{WIDTH_HEIGHT}" height="{WIDTH_HEIGHT}"
-     xmlns="http://www.w3.org/2000/svg"
-     xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg width="{WIDTH_HEIGHT}" height="{WIDTH_HEIGHT}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
     <title>{job_id}</title>
     <!-- Background -->
-    <rect width="100%" height="100%" id="Задник"
-          fill="rgb({r},{g},{b})"/>
-
+    <rect width="100%" height="100%" id="Задник" fill="rgb({r},{g},{b})"/>
     <!-- Logo -->
     {logo_svg}
 </svg>"#,
@@ -90,6 +79,70 @@ pub fn save_ready_logo(
     std::fs::write(output_path, svg_file)?;
 
     Ok(())
+}
+
+// Вспомогательные структуры для лучшей организации данных
+struct LogoTransform {
+    scale: f64,
+    offset_x: f64,
+    offset_y: f64,
+}
+
+impl LogoTransform {
+    fn calculate_transform(image: &RgbaImage, name: &str) -> LogoTransform {
+        let (width, height) = (image.width() as f64, image.height() as f64);
+        let target_size = WIDTH_HEIGHT as f64;
+
+        let scale_x = target_size / width;
+        let scale_y = target_size / height;
+        let base_scale = scale_x.min(scale_y) * LOGO_SCALE_FACTOR;
+
+        let scaled_width = width * base_scale;
+        let scaled_height = height * base_scale;
+
+        let offset_x = (target_size - scaled_width) / 2.0;
+        let offset_y = (target_size - scaled_height) / 2.0;
+
+        LogoTransform {
+            scale: base_scale,
+            offset_x,
+            offset_y,
+        }
+    }
+
+    fn calculate_png_transform(image: &RgbaImage, name: &str) -> LogoTransform {
+        let (width, height) = (image.width() as f64, image.height() as f64);
+        let target_size = WIDTH_HEIGHT as f64;
+
+        let scale_x = target_size / width;
+        let scale_y = target_size / height;
+        let base_scale = LOGO_SCALE_FACTOR;
+
+        let scaled_width = target_size * base_scale;
+        let scaled_height = target_size * base_scale;
+
+        let offset_x = (target_size - scaled_width) / 2.0;
+        let offset_y = (target_size - scaled_height) / 2.0;
+        info!(
+            r#"Размер картинки {name} подрезанный: {width:.2}x{height:.2}
+Сжатие до размера 300x300: {scale_x:.2}x{scale_y:.2} => Итоговое сжатие: {base_scale:.2}
+Сжатый размер: {scaled_width:.2}x{scaled_height:.2}
+Смещение к центру: {offset_x:.2}x{offset_y:.2}"#,
+        );
+
+        LogoTransform {
+            scale: base_scale,
+            offset_x,
+            offset_y,
+        }
+    }
+    fn full_size() -> LogoTransform {
+        LogoTransform {
+            scale: 1.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
+        }
+    }
 }
 
 fn make_png_base64(image: &RgbaImage, optimize: bool) -> Result<String, Box<dyn Error>> {
