@@ -1,5 +1,7 @@
 use crate::background_works::DominantColor;
-use crate::{DOWNLOAD_FOLDER, LogoJob, RESULT_FOLDER, UPSCALE_FOLDER, background_works, save};
+use crate::{
+    CROP_FOLDER, DOWNLOAD_FOLDER, LogoJob, RESULT_FOLDER, UPSCALE_FOLDER, background_works, save,
+};
 use futures::future::join_all;
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageReader, Rgb, Rgba};
 use indicatif::ProgressBar;
@@ -11,6 +13,53 @@ use std::path::Path;
 const WHITE_COLOR: u8 = 250;
 const MIN_SCORE_DOMINANT_COLOR: f32 = 0.5;
 const GRAY_BACKGROUND_COLOR: Srgb<u8> = Srgb::new(238, 237, 241);
+
+pub async fn remove_border_parallel(
+    logos: Vec<LogoJob>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut tasks = Vec::new();
+
+    for logo in logos {
+        tasks.push(tokio::spawn(async move {
+            let result = remove_border(logo).await;
+            result
+        }));
+    }
+
+    // Ждем завершения всех задач
+    let results = join_all(tasks).await;
+
+    // Проверяем результаты
+    for result in results {
+        match result {
+            Ok(Ok(_)) => continue,
+            Ok(Err(e)) => return Err(e),
+            Err(e) => return Err(Box::new(e)),
+        }
+    }
+    info!("Обработка краев завершена");
+    Ok(())
+}
+
+async fn remove_border(logo: LogoJob) -> Result<(), Box<dyn Error + Send + Sync>> {
+    const BORDER_SIZE: u32 = 1;
+
+    let id = logo.id;
+    let small_image_name = format!("{}/{}.jpg", DOWNLOAD_FOLDER, id);
+    let small_rgb_image = load_image(&small_image_name)?;
+    let (w, h) = small_rgb_image.dimensions();
+    if w >= (BORDER_SIZE + 1) && h >= (BORDER_SIZE + 1) {
+        small_rgb_image
+            .crop_imm(
+                BORDER_SIZE,
+                BORDER_SIZE,
+                w - BORDER_SIZE * 2,
+                h - BORDER_SIZE * 2,
+            )
+            .save(format!("{}/{}.jpg", CROP_FOLDER, id))?;
+    }
+    Ok(())
+}
 
 pub async fn images_works_parallel(
     logos: Vec<LogoJob>,
@@ -64,7 +113,6 @@ async fn process_single_logo(logo: LogoJob, task: i32) -> Result<(), Box<dyn Err
     let small_rgb_image = load_image(&small_image_name)?.to_rgb8();
     // Получение доминирующего в изображении цвета (цвета фона)
     let background = DominantColor::from_rgb_image(small_rgb_image)?;
-
     let big_rgba_image = load_image(&big_image_name)?.to_rgba8();
     let mut final_image = big_rgba_image;
 
@@ -111,6 +159,7 @@ async fn process_single_logo(logo: LogoJob, task: i32) -> Result<(), Box<dyn Err
 fn load_image(image_name: &str) -> Result<DynamicImage, Box<dyn Error + Send + Sync>> {
     // Проверка существования файла
     if !Path::new(image_name).exists() {
+        println!("Файл не найден: {}", image_name);
         error!("Файл не найден: {}", image_name);
     }
 
@@ -119,7 +168,17 @@ fn load_image(image_name: &str) -> Result<DynamicImage, Box<dyn Error + Send + S
         .decode()?;
 
     // Проверяем, есть ли альфа-канал и конвертируем в RGB если нужно
-    let image = match image {
+    let image = flatten_alpha_channel(image);
+
+    let (width, height) = image.dimensions();
+
+    // Логирование
+    info!("Загружена картинка: {image_name} Размер картинки {width}x{height} формат");
+    Ok(image)
+}
+
+fn flatten_alpha_channel(image: DynamicImage) -> DynamicImage {
+    match image {
         DynamicImage::ImageRgba8(rgba_image) => {
             // Конвертируем RGBA в RGB с белым фоном
             let (width, height) = rgba_image.dimensions();
@@ -139,14 +198,5 @@ fn load_image(image_name: &str) -> Result<DynamicImage, Box<dyn Error + Send + S
 
         // Для остальных типов изображений (RGB, Gray, etc.) оставляем как есть
         _ => image,
-    };
-
-    let (width, height) = image.dimensions();
-
-    // Логирование
-    info!(
-        "Загружена картинка: {} Размер картинки {}x{} формат",
-        image_name, width, height
-    );
-    Ok(image)
+    }
 }

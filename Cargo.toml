@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-reqwest = "0.13.1"
+reqwest = { version = "0.13.1", features = ["blocking"] }
 tokio = { version = "1.49.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -22,3 +22,6 @@ vtracer = "0.6.5"
 visioncortex = "0.8.10"
 clap = { version = "4.5.54", features = ["derive"] }
 imageproc = "0.23"
+scraper = "0.25.0"
+regex = "1.12.2"
+url = "2.5.8"

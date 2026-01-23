@@ -1,15 +1,59 @@
 use crate::LogoJob;
+use crate::parsers::UrlType;
+use futures::future::join_all;
 use log::info;
+use reqwest;
+use scraper::{Html, Selector};
 use serde::Deserialize;
 use std::error::Error;
+use std::path::Path;
 use std::{fs, io};
 
+const TEMP_JOB_FILE: &str = "job.json";
+
 // Загрузка задачи по созданию логотипов
-fn load_job(json_file_path: &str) -> Result<Vec<LogoJob>, Box<dyn Error + Send + Sync>> {
+pub fn simple_load_job(json_file_path: &str) -> Result<Vec<LogoJob>, Box<dyn Error + Send + Sync>> {
     let json_content = fs::read_to_string(json_file_path)?;
     let logos: Vec<LogoJob> = serde_json::from_str(&json_content)?;
     info!("Загружено заданий {}", logos.len());
     Ok(logos)
+}
+
+pub fn generate_job(dir_path: &str) -> Result<Vec<LogoJob>, Box<dyn Error + Send + Sync>> {
+    const EMPTY_URL: &str = "None url";
+    let path = Path::new(dir_path);
+
+    if !path.exists() || !path.is_dir() {
+        return Err(format!("Директории '{}' не существует", dir_path).into());
+    }
+
+    let image_extensions = ["jpg", "jpeg", "png", "gif", "webp"];
+
+    let mut jobs: Vec<LogoJob> = fs::read_dir(path)?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_file())
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| image_extensions.contains(&ext.to_lowercase().as_str()))
+                .unwrap_or(false)
+        })
+        .filter_map(|entry| {
+            entry
+                .path()
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .and_then(|stem| stem.parse::<u32>().ok())
+                .map(|id| LogoJob::new(id, EMPTY_URL.to_string()))
+        })
+        .collect();
+
+    jobs.sort_by(|a, b| a.id.cmp(&b.id));
+    println!("Создано {:?} задач", jobs);
+
+    Ok(jobs)
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -38,7 +82,7 @@ pub struct DataItem {
     pub logo: Option<serde_json::Value>,
     pub logo_attachment: Option<serde_json::Value>,
     pub attachments: Vec<Attachment>,
-    pub merchant: Merchant,
+    pub merchant: Option<Merchant>,
     #[serde(rename = "$$hashKey")]
     pub hash_key: String,
 }
@@ -56,8 +100,8 @@ pub struct Attachment {
 #[serde(rename_all = "camelCase")]
 pub struct Merchant {
     pub merchant_id: i64,
-    pub date_created: i64,
-    pub last_updated: i64,
+    pub date_created: Option<i64>,
+    pub last_updated: Option<i64>,
     pub name: String,
     pub url: Option<String>,
     pub phone: Option<String>,
@@ -76,7 +120,9 @@ pub struct Merchant {
     pub inn_count: i64,
 }
 
-pub fn load_json_job(json_file_path: &str) -> Result<Vec<LogoJob>, Box<dyn Error + Send + Sync>> {
+pub async fn load_json_job(
+    json_file_path: &str,
+) -> Result<Vec<LogoJob>, Box<dyn Error + Send + Sync>> {
     println!("Скачка файла {}", json_file_path);
     // Чтение файла с обработкой возможных ошибок
     let json_content = match fs::read_to_string(json_file_path) {
@@ -107,15 +153,37 @@ pub fn load_json_job(json_file_path: &str) -> Result<Vec<LogoJob>, Box<dyn Error
         }
     };
 
-    let logos = logos
-        .data
-        .data
-        .iter()
-        .map(|x| LogoJob {
-            id: x.id,
-            url: x.attachments.iter().next().unwrap().url.clone(),
-        })
+    let futures: Vec<_> = logos.data.data.iter().map(|x| x.get_job()).collect();
+
+    let results = join_all(futures).await;
+    let logos: Vec<LogoJob> = results
+        .into_iter()
+        .filter_map(Result::ok)
+        .flatten()
         .collect();
 
+    // println!("loading {:?}", logos);
+
+    // Сохранить задачу навсякий случай
+    let json_content = serde_json::to_string_pretty(&logos)?;
+    fs::write(TEMP_JOB_FILE, json_content)?;
+
     Ok(logos)
+}
+
+impl DataItem {
+    // Парсим json задания
+    async fn get_job(&self) -> Result<Option<LogoJob>, Box<dyn Error>> {
+        // Попробовать получить URL из вложений
+        if let UrlType::JSONJob(url) = UrlType::from_attachments(self.attachments.clone()) {
+            return Ok(Some(LogoJob::new(self.id, url)));
+        }
+
+        // Обработка заметки
+        let note_url = UrlType::from_note(&self.note);
+        match note_url {
+            Some(t) => t.process(self.id).await,
+            _ => Ok(None),
+        }
+    }
 }

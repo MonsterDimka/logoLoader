@@ -8,9 +8,9 @@ use oxipng::{Options, optimize_from_memory};
 use std::error::Error;
 use std::path::Path;
 
-const MAX_VECTOR_LOGO_SIZE: usize = 90;
+const MAX_VECTOR_LOGO_SIZE: usize = 100;
 const KILOBYTE: usize = 1024;
-const PNG_OPTIMIZE: u8 = 0;
+const PNG_OPTIMIZE: u8 = 4;
 const WIDTH_HEIGHT: usize = 300;
 const LOGO_SCALE_FACTOR: f64 = 0.7;
 
@@ -23,7 +23,8 @@ pub fn save_ready_logo(
 ) -> Result<(), Box<dyn Error>> {
     let base64_png_logo = make_png_base64(&image, optimize)?;
     let vector_svg_logo = vectorize::image_vectorize_to_svg(&image)?;
-    let should_use_vector = vector_svg_logo.len() / KILOBYTE < MAX_VECTOR_LOGO_SIZE;
+    let should_use_vector =
+        vector_svg_logo.len() / KILOBYTE < MAX_VECTOR_LOGO_SIZE && background_color.score > 0.5;
 
     // Если векторизация большого размера используем PNG
     let logo_svg = if should_use_vector {
@@ -163,3 +164,21 @@ fn make_png_base64(image: &RgbaImage, optimize: bool) -> Result<String, Box<dyn 
     };
     Ok(base64_image)
 }
+
+
+// <?xml version="1.0" encoding="UTF-8"?>
+// <svg width="300px" height="300px" viewBox="0 0 300 300" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+// <title>none copy 2646</title>
+// <g id="none-copy-2646" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+// <g id="Group" mask="url(#mask-2)" opacity="0.230073475" stroke="#000000">
+// <g id="Group">
+// <circle id="Oval" cx="150" cy="150" r="149.5"></circle>
+// <line x1="0" y1="150" x2="300" y2="150" id="Line" stroke-linecap="square"></line>
+// <line x1="0" y1="150" x2="300" y2="150" id="Line" stroke-linecap="square" transform="translate(150, 150) rotate(-270) translate(-150, -150)"></line>
+// <line x1="0" y1="150" x2="300" y2="150" id="Line" stroke-linecap="square" transform="translate(150, 150) rotate(-225) translate(-150, -150)"></line>
+// <line x1="0" y1="150" x2="300" y2="150" id="Line" stroke-linecap="square" transform="translate(150, 150) rotate(-315) translate(-150, -150)"></line>
+// <rect id="Rectangle" x="63.5" y="63.5" width="173" height="173"></rect>
+// </g>
+// </g>
+// </g>
+// </svg>

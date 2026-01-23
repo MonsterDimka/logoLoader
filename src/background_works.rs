@@ -1,11 +1,11 @@
-use image::{GenericImageView, RgbImage, Rgba, RgbaImage};
+use image::{DynamicImage, GenericImageView, RgbImage, Rgba, RgbaImage};
 use imageproc::rect::Rect;
 use kmeans_colors::{Sort, get_kmeans};
 use log::info;
 use palette::cast::from_component_slice;
 use palette::{IntoColor, Lab, Srgb};
 use std::error::Error;
-
+#[derive(Debug)]
 pub struct DominantColor {
     pub color: Srgb<u8>,
     pub score: f32,
@@ -80,6 +80,15 @@ impl DominantColor {
             score: dominant.percentage,
             average: dominant_color_average,
         })
+    }
+
+    pub fn from_rgba_image(
+        rgba_img: RgbaImage,
+    ) -> Result<DominantColor, Box<dyn Error + Send + Sync>> {
+        let dynamic = DynamicImage::ImageRgba8(rgba_img);
+        let rgb_dynamic = dynamic.into_rgb8();
+
+        return DominantColor::from_rgb_image(rgb_dynamic);
     }
 }
 

@@ -1,7 +1,7 @@
 use chrono::Local;
 use clap::Parser;
 use log::info;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
 use std::path::Path;
@@ -12,25 +12,34 @@ use tokio::io::AsyncWriteExt;
 mod background_works;
 mod image_worker;
 mod loaders;
+mod parsers;
 mod save;
+mod url_parser;
 mod vectorize;
 
 const BASE_PATH: &str = "/Users/kapustindmitri/RustroverProjects/logoLoader/";
-const JSON_FILE_PATH: &str = "export_logo_20.01.26.json";
+const JSON_FILE_PATH: &str = "job.json";
 const DOWNLOAD_FOLDER: &str = "Logo/Raw";
 const UPSCALE_FOLDER: &str = "Logo/Upscale";
 const LOG_FILE: &str = "logo.log";
 const RESULT_FOLDER: &str = "Logo/Result";
-const DOWNLOAD: bool = false;
-const UPSCALE: bool = false;
+const CROP_FOLDER: &str = "Logo/Crop";
 
-#[derive(Debug, Deserialize, Clone)]
+const DOWNLOAD: bool = true;
+const UPSCALE: bool = true;
+
+#[derive(Debug, Deserialize, Clone, Serialize)]
 struct LogoJob {
     url: String,
     id: u32,
 }
 
-/// Simple program to greet a person
+impl LogoJob {
+    fn new(id: u32, url: String) -> Self {
+        Self { id, url }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -62,15 +71,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     // Скачка задания
     println!("Скачка задания {}", job_path.to_str().unwrap());
-    // let logos = load_job(JSON_FILE_PATH)?;
-    let logos = loaders::load_json_job("test_save.json")?;
+    // let logos = loaders::generate_job(DOWNLOAD_FOLDER)?;
+    // let logos = loaders::simple_load_job(JSON_FILE_PATH)?;
+    let logos = loaders::load_json_job("jobs_from_advisa.json").await?;
 
     // Создаем папки одним вызовом для каждой
     info!(
         "Создаем папки одним вызовом для каждой: {}",
         out_dir_path.to_str().unwrap()
     );
-    for folder in &[DOWNLOAD_FOLDER, UPSCALE_FOLDER, RESULT_FOLDER] {
+    for folder in &[DOWNLOAD_FOLDER, UPSCALE_FOLDER, RESULT_FOLDER, CROP_FOLDER] {
         create_dir(*folder)?;
     }
 
@@ -79,13 +89,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         download_images(logos.clone()).await;
     }
 
+    // Обрезка краев в один пиксель
+    // image_worker::remove_border_parallel(logos.clone()).await?;
+
     // Увеличение разрешения файлов
     if args.upscale {
-        upscale_images().await?;
+        // upscale_images().await?;
     }
-
     // Обработка файлов
-    image_worker::images_works_parallel(logos).await?;
+    // image_worker::images_works_parallel(logos).await?;
 
     Ok(())
 }
@@ -101,15 +113,34 @@ fn create_dir(dir: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
 
 // Скачать все изображения с сервера
 async fn download_images(logos: Vec<LogoJob>) {
-    const FILE_EXTENSION: &str = ".jpg";
-
-    // Запускаем все загрузки параллельно
+    let client = reqwest::Client::new();
     let mut tasks = Vec::new();
     let mut counter = 0;
 
     for logo in logos {
+        let client = client.clone();
         tasks.push(tokio::spawn(async move {
-            let filename = format!("{}/{}{}", DOWNLOAD_FOLDER, logo.id, FILE_EXTENSION);
+            // Делаем HEAD запрос сначала, чтобы получить Content-Type
+            let extension = match client.head(&logo.url).send().await {
+                Ok(response) => {
+                    if let Some(content_type) = response.headers().get("content-type") {
+                        match content_type.to_str().unwrap_or("") {
+                            "image/jpeg" => "jpg",
+                            "image/jpg" => "jpg",
+                            "image/png" => "png",
+                            "image/gif" => "gif",
+                            "image/webp" => "webp",
+                            "image/svg+xml" => "svg",
+                            _ => "none", // fallback
+                        }
+                    } else {
+                        "none"
+                    }
+                }
+                Err(_) => "none",
+            };
+
+            let filename = format!("{}/{}.{}", DOWNLOAD_FOLDER, logo.id, extension);
             let _ = get_image_by_job(&logo.url, &filename).await;
             info!(
                 "{} Файл '{}' -> {} успешно скачан",
@@ -142,6 +173,7 @@ async fn get_image_by_job(url: &str, out: &str) -> Result<(), Box<dyn Error + Se
 
     Ok(())
 }
+/// Версия с дополнительной проверкой - обрезает только если все 4 угла одинаковые
 
 async fn upscale_images() -> Result<(), Box<dyn Error + Send + Sync>> {
     // Usage: upscayl-bin -i infile -o outfile [options]...
@@ -164,7 +196,7 @@ async fn upscale_images() -> Result<(), Box<dyn Error + Send + Sync>> {
     //     -v                   verbose output
 
     const BASE_PATH: &str = "/Users/kapustindmitri/RustroverProjects/logoLoader/";
-    let input_path = Path::new(BASE_PATH).join(DOWNLOAD_FOLDER);
+    let input_path = Path::new(BASE_PATH).join(CROP_FOLDER);
     let output_path = Path::new(BASE_PATH).join(UPSCALE_FOLDER);
 
     const UPSCALER_PROG: &str = "/Applications/Upscayl.app/Contents/Resources/bin/upscayl-bin";
