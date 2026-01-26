@@ -77,89 +77,88 @@ impl Config {
         cli_config.load_from_file()
     }
 
+    /// Найти путь к конфигурационному файлу
+    fn find_config_path(&self) -> PathBuf {
+        // Если путь указан явно, используем его
+        if let Some(path) = &self.config_file {
+            return PathBuf::from(path);
+        }
+
+        // Ищем в текущей директории
+        let current = PathBuf::from(".").join(CONFIG_FILE_NAME);
+        if current.exists() {
+            return current;
+        }
+
+        // Ищем в домашней директории
+        if let Some(home) = std::env::var_os("HOME") {
+            let home_config = PathBuf::from(home).join(format!(".{}", CONFIG_FILE_NAME));
+            if home_config.exists() {
+                return home_config;
+            }
+        }
+
+        // Возвращаем путь в текущей директории (даже если не существует)
+        current
+    }
+
+    /// Загрузить конфигурацию из файла
+    fn load_file_config(path: &Path) -> Option<ConfigFile> {
+        if !path.exists() {
+            return None;
+        }
+
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                eprintln!("Не удалось прочитать конфигурационный файл {}: {}", path.display(), e);
+                return None;
+            }
+        };
+
+        match toml::from_str(&content) {
+            Ok(config) => {
+                println!("Конфигурация загружена из файла: {}", path.display());
+                Some(config)
+            }
+            Err(e) => {
+                eprintln!("Ошибка парсинга конфигурационного файла {}: {}", path.display(), e);
+                None
+            }
+        }
+    }
+
     /// Загрузить конфигурацию из файла и объединить с CLI аргументами
     /// CLI аргументы имеют приоритет над значениями из файла
     fn load_from_file(self) -> Config {
-        // Определяем путь к конфигурационному файлу
-        let config_path = self.config_file.as_ref().map(PathBuf::from).unwrap_or_else(|| {
-            // Ищем конфиг в текущей директории
-            let current_dir = PathBuf::from(".").join(CONFIG_FILE_NAME);
-            if current_dir.exists() {
-                current_dir
-            } else {
-                // Пробуем в домашней директории
-                if let Some(home) = std::env::var_os("HOME") {
-                    let home_config = PathBuf::from(home).join(format!(".{}", CONFIG_FILE_NAME));
-                    if home_config.exists() {
-                        home_config
-                    } else {
-                        // Возвращаем путь к файлу в текущей директории (даже если не существует)
-                        current_dir
-                    }
-                } else {
-                    // Возвращаем путь к файлу в текущей директории (даже если не существует)
-                    current_dir
-                }
-            }
-        });
-
-        // Загружаем конфигурацию из файла, если он существует
-        let file_config: Option<ConfigFile> = if config_path.exists() {
-            match fs::read_to_string(&config_path) {
-                Ok(content) => {
-                    match toml::from_str(&content) {
-                        Ok(config) => {
-                            println!("Конфигурация загружена из файла: {}", config_path.display());
-                            Some(config)
-                        }
-                        Err(e) => {
-                            eprintln!("Ошибка парсинга конфигурационного файла {}: {}", config_path.display(), e);
-                            None
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Не удалось прочитать конфигурационный файл {}: {}", config_path.display(), e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        // Объединяем конфигурацию: сначала значения по умолчанию, затем из файла, затем CLI
-        let file = file_config.as_ref();
+        let config_path = self.find_config_path();
+        let file_config = Self::load_file_config(&config_path);
+        let upscayl = file_config.as_ref().and_then(|f| f.upscayl.as_ref());
         
         Config {
             config_file: self.config_file,
-            job: self.job.or_else(|| {
-                file.and_then(|f| f.job.clone())
-                    .or(Some(JSON_FILE_PATH.to_string()))
-            }),
-            out_dir: self.out_dir.or_else(|| {
-                file.and_then(|f| f.out_dir.clone())
-                    .or(Some(".".to_string()))
-            }),
-            download: self.download.or_else(|| {
-                file.and_then(|f| f.download)
-                    .or(Some(DOWNLOAD))
-            }),
-            upscale: self.upscale.or_else(|| {
-                file.and_then(|f| f.upscale)
-                    .or(Some(UPSCALE))
-            }),
-            upscayl_bin: self.upscayl_bin.or_else(|| {
-                file.and_then(|f| f.upscayl.as_ref().and_then(|u| u.bin.clone()))
-                    .or(Some(DEFAULT_UPSCALER_PROG.to_string()))
-            }),
-            upscayl_models: self.upscayl_models.or_else(|| {
-                file.and_then(|f| f.upscayl.as_ref().and_then(|u| u.models.clone()))
-                    .or(Some(DEFAULT_MODEL_PATH.to_string()))
-            }),
-            upscayl_model: self.upscayl_model.or_else(|| {
-                file.and_then(|f| f.upscayl.as_ref().and_then(|u| u.model.clone()))
-                    .or(Some(DEFAULT_MODEL_NAME.to_string()))
-            }),
+            // CLI -> File -> Default
+            job: self.job
+                .or_else(|| file_config.as_ref().and_then(|f| f.job.clone()))
+                .unwrap_or_else(|| JSON_FILE_PATH.to_string()),
+            out_dir: self.out_dir
+                .or_else(|| file_config.as_ref().and_then(|f| f.out_dir.clone()))
+                .unwrap_or_else(|| ".".to_string()),
+            download: self.download
+                .or_else(|| file_config.as_ref().and_then(|f| f.download))
+                .unwrap_or(DOWNLOAD),
+            upscale: self.upscale
+                .or_else(|| file_config.as_ref().and_then(|f| f.upscale))
+                .unwrap_or(UPSCALE),
+            upscayl_bin: self.upscayl_bin
+                .or_else(|| upscayl.and_then(|u| u.bin.clone()))
+                .unwrap_or_else(|| DEFAULT_UPSCALER_PROG.to_string()),
+            upscayl_models: self.upscayl_models
+                .or_else(|| upscayl.and_then(|u| u.models.clone()))
+                .unwrap_or_else(|| DEFAULT_MODEL_PATH.to_string()),
+            upscayl_model: self.upscayl_model
+                .or_else(|| upscayl.and_then(|u| u.model.clone()))
+                .unwrap_or_else(|| DEFAULT_MODEL_NAME.to_string()),
         }
     }
 
