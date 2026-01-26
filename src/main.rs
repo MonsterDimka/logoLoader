@@ -19,7 +19,7 @@ mod vectorize;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = Config::get();
-    let job_path = Path::new(&config.job);
+    let job_path = Path::new(config.job());
 
     // Инициализация лога
     println!("Инициализация лога");
@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     // Скачка файлов  картинок задания
-    if config.download {
+    if config.download() {
         // download_images(logos.clone(), &config).await;
     }
 
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // remove_border_parallel(logos.clone(), &config).await?;
 
     // Увеличение разрешения файлов
-    if config.upscale {
+    if config.upscale() {
         // image_worker::upscale_images(&config).await?;
     }
     // Обработка файлов

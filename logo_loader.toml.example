@@ -1,0 +1,25 @@
+# Пример конфигурационного файла для logoLoader
+# Скопируйте этот файл в logo_loader.toml и настройте под свои нужды
+
+# Путь к JSON файлу с заданиями на обработку логотипов
+job = "jobs_from_advisa.json"
+
+# Выходная директория для всех сгенерированных файлов
+out_dir = "."
+
+# Скачивать ли изображения из интернета
+download = true
+
+# Увеличивать ли разрешение изображений
+upscale = true
+
+# Настройки для Upscayl (увеличение разрешения)
+[upscayl]
+# Путь к бинарному файлу upscayl
+bin = "/Applications/Upscayl.app/Contents/Resources/bin/upscayl-bin"
+
+# Путь к директории с моделями Upscayl
+models = "/Applications/Upscayl.app/Contents/Resources/models"
+
+# Имя модели для использования
+model = "upscayl-standard-4x"

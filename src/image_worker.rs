@@ -272,15 +272,15 @@ pub async fn upscale_images(config: &Config) -> Result<(), Box<dyn Error + Send 
     const COMPRESSION: usize = 100;
     const TYPE: &str = "png";
 
-    let status = Command::new(&config.upscayl_bin)
+    let status = Command::new(config.upscayl_bin())
         .arg("-i")
         .arg(input_path.to_str().ok_or("Invalid UTF-8 in input path")?)
         .arg("-o")
         .arg(output_path.to_str().ok_or("Invalid UTF-8 in output path")?)
         .arg("-m")
-        .arg(&config.upscayl_models)
+        .arg(config.upscayl_models())
         .arg("-n")
-        .arg(&config.upscayl_model)
+        .arg(config.upscayl_model())
         .arg("-s")
         .arg(SCALE.to_string())
         .arg("-f")
