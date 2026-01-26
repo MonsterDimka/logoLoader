@@ -1,5 +1,5 @@
 use crate::background_works::{DominantColor, trim_transparent_border};
-use crate::config::{CROP_FOLDER, DOWNLOAD_FOLDER, RESULT_FOLDER, UPSCALE_FOLDER};
+use crate::config::Config;
 use crate::job_loaders::{Jobs, LogoJob};
 use crate::save::save_ready_logo;
 
@@ -17,12 +17,17 @@ const MIN_SCORE_DOMINANT_COLOR: f32 = 0.5;
 const GRAY_BACKGROUND_COLOR: Srgb<u8> = Srgb::new(238, 237, 241);
 pub async fn remove_border_parallel(
     jobs: Jobs,
+    config: &Config,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut tasks = Vec::new();
+    let download_folder = config.download_folder();
+    let crop_folder = config.crop_folder();
 
     for logo in jobs.logos.clone() {
+        let download_folder = download_folder.clone();
+        let crop_folder = crop_folder.clone();
         tasks.push(tokio::spawn(async move {
-            let result = remove_border(logo).await;
+            let result = remove_border(logo, &download_folder, &crop_folder).await;
             result
         }));
     }
@@ -42,14 +47,19 @@ pub async fn remove_border_parallel(
     Ok(())
 }
 
-async fn remove_border(logo: LogoJob) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn remove_border(
+    logo: LogoJob,
+    download_folder: &std::path::Path,
+    crop_folder: &std::path::Path,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     const BORDER_SIZE: u32 = 1;
 
     let id = logo.id;
-    let small_image_name = format!("{}/{}.jpg", DOWNLOAD_FOLDER, id);
+    let small_image_name = download_folder.join(format!("{}.jpg", id));
     let small_rgb_image = load_image(&small_image_name)?;
     let (w, h) = small_rgb_image.dimensions();
     if w >= (BORDER_SIZE + 1) && h >= (BORDER_SIZE + 1) {
+        let output_path = crop_folder.join(format!("{}.jpg", id));
         small_rgb_image
             .crop_imm(
                 BORDER_SIZE,
@@ -57,22 +67,38 @@ async fn remove_border(logo: LogoJob) -> Result<(), Box<dyn Error + Send + Sync>
                 w - BORDER_SIZE * 2,
                 h - BORDER_SIZE * 2,
             )
-            .save(format!("{}/{}.jpg", CROP_FOLDER, id))?;
+            .save(&output_path)?;
     }
     Ok(())
 }
 
-pub async fn images_works_parallel(jobs: Jobs) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn images_works_parallel(
+    jobs: Jobs,
+    config: &Config,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let bar = ProgressBar::new(jobs.logos.len() as u64);
 
     let mut tasks = Vec::new();
     let mut task_id = 0;
+    let download_folder = config.download_folder();
+    let upscale_folder = config.upscale_folder();
+    let result_folder = config.result_folder();
 
     for logo in jobs.logos {
         let bar_clone = bar.clone();
+        let download_folder = download_folder.clone();
+        let upscale_folder = upscale_folder.clone();
+        let result_folder = result_folder.clone();
 
         tasks.push(tokio::spawn(async move {
-            let result = process_single_logo(logo, task_id).await;
+            let result = process_single_logo(
+                logo,
+                task_id,
+                &download_folder,
+                &upscale_folder,
+                &result_folder,
+            )
+            .await;
             bar_clone.inc(1);
             result
         }));
@@ -97,15 +123,24 @@ pub async fn images_works_parallel(jobs: Jobs) -> Result<(), Box<dyn Error + Sen
     Ok(())
 }
 
-async fn process_single_logo(logo: LogoJob, task: i32) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn process_single_logo(
+    logo: LogoJob,
+    task: i32,
+    download_folder: &std::path::Path,
+    upscale_folder: &std::path::Path,
+    result_folder: &std::path::Path,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let id = logo.id;
 
-    let small_image_name = format!("{}/{}.jpg", DOWNLOAD_FOLDER, id);
-    let big_image_name = format!("{}/{}.png", UPSCALE_FOLDER, id);
+    let small_image_name = download_folder.join(format!("{}.jpg", id));
+    let big_image_name = upscale_folder.join(format!("{}.png", id));
 
     info!(
         "{} Таска обработки начата. Задача:{} Файлы для обработки: {} {}",
-        task, id, small_image_name, big_image_name
+        task,
+        id,
+        small_image_name.display(),
+        big_image_name.display()
     );
 
     // Загружаем изображения
@@ -132,13 +167,13 @@ async fn process_single_logo(logo: LogoJob, task: i32) -> Result<(), Box<dyn Err
     };
 
     // Формирование имени SVG файла
-    let new_image_name = format!("{}/{}.svg", RESULT_FOLDER, id);
+    let new_image_name = result_folder.join(format!("{}.svg", id));
     let percent = (background.score * 100.0) as u16;
 
     // Логирование
     info!(
         "{} Доминирующий цвет: RGB({} {} {})  Всего: {}%",
-        small_image_name,
+        small_image_name.display(),
         background.color.red,
         background.color.green,
         background.color.blue,
@@ -146,20 +181,25 @@ async fn process_single_logo(logo: LogoJob, task: i32) -> Result<(), Box<dyn Err
     );
 
     // Создание SVG
-    let _ = save_ready_logo(final_image, id, background, &new_image_name, true);
+    let image_path_str = new_image_name.to_str().ok_or("Invalid path")?;
+    let _ = save_ready_logo(final_image, id, background, image_path_str, true);
 
     info!(
         "{} Таска закончена. Задача:{} Файлы для обработки: {} {} Сохранение {}",
-        task, id, small_image_name, big_image_name, new_image_name
+        task,
+        id,
+        small_image_name.display(),
+        big_image_name.display(),
+        new_image_name.display()
     );
     Ok(())
 }
 
-fn load_image(image_name: &str) -> Result<DynamicImage, Box<dyn Error + Send + Sync>> {
+fn load_image(image_name: &std::path::Path) -> Result<DynamicImage, Box<dyn Error + Send + Sync>> {
     // Проверка существования файла
-    if !Path::new(image_name).exists() {
-        println!("Файл не найден: {}", image_name);
-        error!("Файл не найден: {}", image_name);
+    if !image_name.exists() {
+        println!("Файл не найден: {}", image_name.display());
+        error!("Файл не найден: {}", image_name.display());
     }
 
     let image = ImageReader::open(image_name)?
@@ -172,7 +212,12 @@ fn load_image(image_name: &str) -> Result<DynamicImage, Box<dyn Error + Send + S
     let (width, height) = image.dimensions();
 
     // Логирование
-    info!("Загружена картинка: {image_name} Размер картинки {width}x{height} формат");
+    info!(
+        "Загружена картинка: {} Размер картинки {}x{} формат",
+        image_name.display(),
+        width,
+        height
+    );
     Ok(image)
 }
 
@@ -200,7 +245,7 @@ fn flatten_alpha_channel(image: DynamicImage) -> DynamicImage {
     }
 }
 
-pub async fn upscale_images() -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn upscale_images(config: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Usage: upscayl-bin -i infile -o outfile [options]...
     //
     //     -h                   show this help
@@ -220,41 +265,36 @@ pub async fn upscale_images() -> Result<(), Box<dyn Error + Send + Sync>> {
     //     -f format            output image format (jpg/png/webp, default=ext/png)
     //     -v                   verbose output
 
-    const BASE_PATH: &str = "/Users/kapustindmitri/RustroverProjects/logoLoader/";
-    let input_path = Path::new(BASE_PATH).join(CROP_FOLDER);
-    let output_path = Path::new(BASE_PATH).join(UPSCALE_FOLDER);
+    let input_path = config.crop_folder();
+    let output_path = config.upscale_folder();
 
-    const UPSCALER_PROG: &str = "/Applications/Upscayl.app/Contents/Resources/bin/upscayl-bin";
-    const MODEL_PATH: &str = "/Applications/Upscayl.app/Contents/Resources/models";
-    const MODEL_NAME: &str = "upscayl-standard-4x";
     const SCALE: usize = 4;
     const COMPRESSION: usize = 100;
     const TYPE: &str = "png";
 
-    let status = Command::new(UPSCALER_PROG)
+    let status = Command::new(&config.upscayl_bin)
         .arg("-i")
-        .arg(input_path.to_str().expect("Invalid UTF-8 in input path"))
+        .arg(input_path.to_str().ok_or("Invalid UTF-8 in input path")?)
         .arg("-o")
-        .arg(output_path.to_str().expect("Invalid UTF-8 in input path"))
+        .arg(output_path.to_str().ok_or("Invalid UTF-8 in output path")?)
         .arg("-m")
-        .arg(&MODEL_PATH)
+        .arg(&config.upscayl_models)
         .arg("-n")
-        .arg(&MODEL_NAME)
+        .arg(&config.upscayl_model)
         .arg("-s")
         .arg(SCALE.to_string())
         .arg("-f")
-        .arg(&TYPE)
+        .arg(TYPE)
         .arg("-v")
         .arg("-c")
         .arg(COMPRESSION.to_string())
-        .status()
-        .expect("failed to execute process");
+        .status()?;
 
     if !status.success() {
-        return Err(format!("Upscayl failed for {}", input_path.to_str().expect("err")).into());
+        return Err(format!("Upscayl failed for {}", input_path.display()).into());
     }
 
-    info!("✅ Completed: {}", output_path.to_str().expect("err"));
+    info!("✅ Completed: {}", output_path.display());
 
     Ok(())
 }

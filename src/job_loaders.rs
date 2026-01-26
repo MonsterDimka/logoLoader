@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-use crate::config::TEMP_JOB_FILE;
 use crate::parsers::Root;
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -70,7 +69,7 @@ impl Jobs {
     }
 
     /// Загрузка задачи по созданию логотипов
-    pub async fn load_json_job(json_file_path: &str) -> Jobs {
+    pub async fn load_json_job(json_file_path: &str, temp_job_path: Option<&std::path::Path>) -> Jobs {
         println!("Скачка файла {}", json_file_path);
         // Чтение файла с обработкой возможных ошибок
         let json_content =
@@ -89,9 +88,11 @@ impl Jobs {
             .collect();
 
         // Сохранить задачу на всякий случай
-        let json_content =
-            serde_json::to_string_pretty(&logos).expect("Невозможно создать запасной json задания");
-        fs::write(TEMP_JOB_FILE, json_content).expect("Ошибка сохранения запасного json задания");
+        if let Some(temp_path) = temp_job_path {
+            let json_content =
+                serde_json::to_string_pretty(&logos).expect("Невозможно создать запасной json задания");
+            fs::write(temp_path, json_content).expect("Ошибка сохранения запасного json задания");
+        }
 
         println!("Загружено заданий {}", logos.len());
 
