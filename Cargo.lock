@@ -1443,6 +1443,7 @@ dependencies = [
  "indicatif",
  "kmeans_colors",
  "log",
+ "once_cell",
  "oxipng",
  "palette",
  "regex",
