@@ -1,7 +1,7 @@
 use crate::background_works::{DominantColor, trim_transparent_border};
 use crate::config::Config;
 use crate::job_loaders::{Jobs, LogoJob};
-use crate::save::save_ready_logo;
+use crate::svg_saver::save_ready_logo;
 
 use futures::future::join_all;
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageReader, Rgb, Rgba};
@@ -18,7 +18,7 @@ const GRAY_BACKGROUND_COLOR: Srgb<u8> = Srgb::new(238, 237, 241);
 pub async fn remove_border_parallel(
     jobs: Jobs,
     config: &Config,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut tasks = Vec::new();
     let download_folder = config.download_folder();
     let crop_folder = config.crop_folder();
@@ -49,8 +49,8 @@ pub async fn remove_border_parallel(
 
 async fn remove_border(
     logo: LogoJob,
-    download_folder: &std::path::Path,
-    crop_folder: &std::path::Path,
+    download_folder: &Path,
+    crop_folder: &Path,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     const BORDER_SIZE: u32 = 1;
 
@@ -126,9 +126,9 @@ pub async fn images_works_parallel(
 async fn process_single_logo(
     logo: LogoJob,
     task: i32,
-    download_folder: &std::path::Path,
-    upscale_folder: &std::path::Path,
-    result_folder: &std::path::Path,
+    download_folder: &Path,
+    upscale_folder: &Path,
+    result_folder: &Path,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let id = logo.id;
 
@@ -195,7 +195,7 @@ async fn process_single_logo(
     Ok(())
 }
 
-fn load_image(image_name: &std::path::Path) -> Result<DynamicImage, Box<dyn Error + Send + Sync>> {
+fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + Sync>> {
     // Проверка существования файла
     if !image_name.exists() {
         println!("Файл не найден: {}", image_name.display());
@@ -253,7 +253,7 @@ pub async fn upscale_images(config: &Config) -> Result<(), Box<dyn Error + Send 
     //     -o output-path       output image path (jpg/png/webp) or directory
     //     -z model-scale       scale according to the model (can be 2, 3, 4. default=4)
     //     -s output-scale      custom output scale (can be 2, 3, 4. default=4)
-    //     -r resize            resize output to dimension (default=WxH:default), use '-r help' for more details
+    //     -r resize            output to dimension (default=WxH:default), use '-r help' for more details
     //     -w width             resize output to a width (default=W:default), use '-r help' for more details
     //     -c compress          compression of the output image, default 0 and varies to 100
     //     -t tile-size         tile size (>=32/0=auto, default=0) can be 0,0,0 for multi-gpu

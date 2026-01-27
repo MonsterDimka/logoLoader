@@ -14,7 +14,7 @@ mod image_worker;
 mod job_loaders;
 mod logger;
 mod parsers;
-mod save;
+mod svg_saver;
 mod vectorize;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -38,24 +38,24 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     // Скачка файлов  картинок задания
     if config.download() {
-        // download_images(logos.clone(), &config).await;
+        download_images(logos.clone(), &config).await;
     }
 
     // Обрезка краев в один пиксель
-    // remove_border_parallel(logos.clone(), &config).await?;
+    remove_border_parallel(logos.clone(), &config).await?;
 
     // Увеличение разрешения файлов
     if config.upscale() {
-        // image_worker::upscale_images(&config).await?;
+        image_worker::upscale_images(&config).await?;
     }
     // Обработка файлов
-    // images_works_parallel(logos.clone(), &config).await?;
+    images_works_parallel(logos.clone(), &config).await?;
 
     Ok(())
 }
 
 // Создать директорию если ее не существует
-pub fn create_dir(dir: &std::path::Path) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn create_dir(dir: &Path) -> Result<(), Box<dyn Error + Send + Sync>> {
     if !dir.exists() {
         fs::create_dir_all(dir)?;
         info!("Создана директория: {}", dir.display());

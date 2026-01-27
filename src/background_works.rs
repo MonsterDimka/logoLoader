@@ -81,15 +81,6 @@ impl DominantColor {
             average: dominant_color_average,
         })
     }
-
-    pub fn from_rgba_image(
-        rgba_img: RgbaImage,
-    ) -> Result<DominantColor, Box<dyn Error + Send + Sync>> {
-        let dynamic = DynamicImage::ImageRgba8(rgba_img);
-        let rgb_dynamic = dynamic.into_rgb8();
-
-        return DominantColor::from_rgb_image(rgb_dynamic);
-    }
 }
 
 // Обрезка прозрачных краев изображения
