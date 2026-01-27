@@ -15,6 +15,7 @@ struct IconInfo {
     url: String,
     icon_type: String,
     sizes: Option<String>,
+    priority: u8, // Приоритет: выше = лучше
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -229,32 +230,49 @@ impl UrlType {
     }
 
     async fn process_web_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
-        let response = reqwest::get(url).await?;
-        let html_content = response.text().await?;
-        let document = Html::parse_document(&html_content);
-
-        let mut icons = Vec::new();
+        let html = reqwest::get(url).await?.text().await?;
+        let document = Html::parse_document(&html);
         let base_url = Url::parse(url)?;
+        let mut icons = Vec::new();
 
-        // Поиск различных типов иконок
-        let icon_selectors = [
-            ("icon", "link[rel='icon']"),
-            ("shortcut icon", "link[rel='shortcut icon']"),
-            ("apple-touch-icon", "link[rel='apple-touch-icon']"),
-            ("mask-icon", "link[rel='mask-icon']"),
-            ("fluid-icon", "link[rel='fluid-icon']"),
+        // Высокий приоритет: мета-теги и специальные иконки
+        let meta_selectors = [
+            (10, "meta[property='og:image']", "content", "og:image"),
+            (9, "meta[name='twitter:image']", "content", "twitter:image"),
+            (8, "link[rel='apple-touch-icon']", "href", "apple-touch-icon"),
+            (7, "link[rel='mask-icon']", "href", "mask-icon"),
+            (6, "link[rel='fluid-icon']", "href", "fluid-icon"),
+            (5, "link[rel='icon']", "href", "icon"),
+            (4, "link[rel='shortcut icon']", "href", "shortcut icon"),
         ];
 
-        for (icon_type, selector_str) in icon_selectors.iter() {
+        for (priority, selector_str, attr, icon_type) in &meta_selectors {
             if let Ok(selector) = Selector::parse(selector_str) {
-                for element in document.select(&selector) {
-                    if let Some(href) = element.value().attr("href") {
-                        if let Ok(absolute_url) = base_url.join(href) {
-                            let sizes = element.value().attr("sizes").map(String::from);
+                for el in document.select(&selector) {
+                    if let Some(val) = el.value().attr(attr).and_then(|v| base_url.join(v).ok()) {
+                        icons.push(IconInfo {
+                            url: val.to_string(),
+                            icon_type: icon_type.to_string(),
+                            sizes: el.value().attr("sizes").map(String::from),
+                            priority: *priority,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Средний приоритет: изображения с alt содержащим "logo" (case-insensitive)
+        if let Ok(selector) = Selector::parse("img[alt]") {
+            for img in document.select(&selector) {
+                if let Some(alt) = img.value().attr("alt") {
+                    let alt_lower = alt.to_lowercase();
+                    if alt_lower.contains("logo") || alt_lower.contains("логотип") {
+                        if let Some(src) = img.value().attr("src").and_then(|s| base_url.join(s).ok()) {
                             icons.push(IconInfo {
-                                url: absolute_url.to_string(),
-                                icon_type: icon_type.to_string(),
-                                sizes,
+                                url: src.to_string(),
+                                icon_type: "logo-alt".to_string(),
+                                sizes: img.value().attr("sizes").map(String::from),
+                                priority: 3,
                             });
                         }
                     }
@@ -262,41 +280,45 @@ impl UrlType {
             }
         }
 
-        // Поиск Open Graph изображения
-        if let Ok(selector) = Selector::parse("meta[property='og:image']") {
-            for element in document.select(&selector) {
-                if let Some(content) = element.value().attr("content") {
-                    if let Ok(absolute_url) = base_url.join(content) {
+        // Средний приоритет: изображения в header/nav
+        for selector_str in &["header img", "nav img", ".logo img", "[class*='logo'] img"] {
+            if let Ok(selector) = Selector::parse(selector_str) {
+                for img in document.select(&selector) {
+                    if let Some(src) = img.value().attr("src").and_then(|s| base_url.join(s).ok()) {
                         icons.push(IconInfo {
-                            url: absolute_url.to_string(),
-                            icon_type: "og:image".to_string(),
-                            sizes: None,
+                            url: src.to_string(),
+                            icon_type: "header-logo".to_string(),
+                            sizes: img.value().attr("sizes").map(String::from),
+                            priority: 2,
                         });
                     }
                 }
             }
         }
 
-        // Поиск Twitter изображения
-        if let Ok(selector) = Selector::parse("meta[name='twitter:image']") {
-            for element in document.select(&selector) {
-                if let Some(content) = element.value().attr("content") {
-                    if let Ok(absolute_url) = base_url.join(content) {
+        // Низкий приоритет: все остальные изображения (квадратные, небольшие)
+        if let Ok(selector) = Selector::parse("img[src]") {
+            for img in document.select(&selector) {
+                if let Some(src) = img.value().attr("src").and_then(|s| base_url.join(s).ok()) {
+                    let src_str = src.to_string();
+                    // Пропускаем явно не логотипы
+                    if !src_str.contains("banner") && !src_str.contains("ad") && !src_str.contains("1x1") {
                         icons.push(IconInfo {
-                            url: absolute_url.to_string(),
-                            icon_type: "twitter:image".to_string(),
-                            sizes: None,
+                            url: src_str,
+                            icon_type: "image".to_string(),
+                            sizes: img.value().attr("sizes").map(String::from),
+                            priority: 1,
                         });
                     }
                 }
             }
         }
 
-        if icons.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(LogoJob::new(id, icons[0].url.clone())))
-        }
+        // Выбираем лучший логотип по приоритету и размеру
+        select_best_icon(&icons)
+            .map(|icon| LogoJob::new(id, icon.url.clone()))
+            .map(Some)
+            .ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Логотип не найден")) as Box<dyn Error>)
     }
 
     async fn process_image_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
@@ -387,11 +409,18 @@ impl UrlType {
 }
 
 fn select_best_icon(icons: &[IconInfo]) -> Option<&IconInfo> {
-    // Приоритет по размеру (ищем наибольший)
-    icons
-        .iter()
-        .max_by_key(|icon| icon.sizes.as_ref().and_then(|s| parse_size(s)).unwrap_or(0))
-        .or_else(|| icons.first())
+    icons.iter().max_by(|a, b| {
+        // Сначала по приоритету
+        match b.priority.cmp(&a.priority) {
+            std::cmp::Ordering::Equal => {
+                // Затем по размеру (больше = лучше)
+                let size_a = a.sizes.as_ref().and_then(|s| parse_size(s)).unwrap_or(0);
+                let size_b = b.sizes.as_ref().and_then(|s| parse_size(s)).unwrap_or(0);
+                size_b.cmp(&size_a)
+            }
+            other => other,
+        }
+    })
 }
 
 fn parse_size(sizes: &str) -> Option<u32> {
