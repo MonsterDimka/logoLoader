@@ -137,28 +137,21 @@ impl Config {
         
         Config {
             config_file: self.config_file,
-            // CLI -> File -> Default
+            // CLI -> File -> Default (handled by getter methods)
             job: self.job
-                .or_else(|| file_config.as_ref().and_then(|f| f.job.clone()))
-                .unwrap_or_else(|| JSON_FILE_PATH.to_string()),
+                .or(file_config.as_ref().and_then(|f| f.job.clone())),
             out_dir: self.out_dir
-                .or_else(|| file_config.as_ref().and_then(|f| f.out_dir.clone()))
-                .unwrap_or_else(|| ".".to_string()),
+                .or(file_config.as_ref().and_then(|f| f.out_dir.clone())),
             download: self.download
-                .or_else(|| file_config.as_ref().and_then(|f| f.download))
-                .unwrap_or(DOWNLOAD),
+                .or(file_config.as_ref().and_then(|f| f.download)),
             upscale: self.upscale
-                .or_else(|| file_config.as_ref().and_then(|f| f.upscale))
-                .unwrap_or(UPSCALE),
+                .or(file_config.as_ref().and_then(|f| f.upscale)),
             upscayl_bin: self.upscayl_bin
-                .or_else(|| upscayl.and_then(|u| u.bin.clone()))
-                .unwrap_or_else(|| DEFAULT_UPSCALER_PROG.to_string()),
+                .or(upscayl.and_then(|u| u.bin.clone())),
             upscayl_models: self.upscayl_models
-                .or_else(|| upscayl.and_then(|u| u.models.clone()))
-                .unwrap_or_else(|| DEFAULT_MODEL_PATH.to_string()),
+                .or(upscayl.and_then(|u| u.models.clone())),
             upscayl_model: self.upscayl_model
-                .or_else(|| upscayl.and_then(|u| u.model.clone()))
-                .unwrap_or_else(|| DEFAULT_MODEL_NAME.to_string()),
+                .or(upscayl.and_then(|u| u.model.clone())),
         }
     }
 

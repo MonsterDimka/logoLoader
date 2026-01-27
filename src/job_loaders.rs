@@ -42,7 +42,7 @@ impl Jobs {
         }
         let image_extensions = ["jpg", "jpeg", "png", "gif", "webp"];
 
-        let mut logos: Vec<LogoJob> = fs::read_dir(path)
+        let logos: Vec<LogoJob> = fs::read_dir(path)
             .expect("Failed to read job directory")
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.path().is_file())
@@ -69,7 +69,7 @@ impl Jobs {
     }
 
     /// Загрузка задачи по созданию логотипов
-    pub async fn load_json_job(json_file_path: &str, temp_job_path: Option<&std::path::Path>) -> Jobs {
+    pub async fn load_json_job(json_file_path: &str, temp_job_path: Option<&Path>) -> Jobs {
         println!("Скачка файла {}", json_file_path);
         // Чтение файла с обработкой возможных ошибок
         let json_content =
@@ -89,8 +89,8 @@ impl Jobs {
 
         // Сохранить задачу на всякий случай
         if let Some(temp_path) = temp_job_path {
-            let json_content =
-                serde_json::to_string_pretty(&logos).expect("Невозможно создать запасной json задания");
+            let json_content = serde_json::to_string_pretty(&logos)
+                .expect("Невозможно создать запасной json задания");
             fs::write(temp_path, json_content).expect("Ошибка сохранения запасного json задания");
         }
 
