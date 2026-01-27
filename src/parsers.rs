@@ -115,67 +115,70 @@ impl UrlType {
     }
 
     async fn process_telegram_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
-        const TELEGRAM_SELECTOR: &str = "img.tgme_page_photo_image";
-        let html = reqwest::get(url).await?.text().await?;
-        let document = Html::parse_document(&html);
-        let selector = Selector::parse(TELEGRAM_SELECTOR)?;
-        println!("Обрабатываем Телеграм: {}  {selector:?} ", url);
-
-        document
-            .select(&selector)
-            .next()
-            .and_then(|img| {
-                println!("Найдено img {img:?}");
-
-                img.value().attr("src")
-            })
-            .map(|src| {
-                println!("Найдено src {src}");
-                LogoJob::new(id, src.to_string())
-            })
-            .map(Some)
-            .ok_or_else(|| {
-                Box::new(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Изображение не найдено на странице Telegram",
-                )) as Box<dyn Error>
-            })
+        println!("Не обрабатываем Телегу: {}", url);
+        Ok(Some(LogoJob::new(id, url.to_string())))
+        // const TELEGRAM_SELECTOR: &str = "img.tgme_page_photo_image";
+        // let html = reqwest::get(url).await?.text().await?;
+        // let document = Html::parse_document(&html);
+        // let selector = Selector::parse(TELEGRAM_SELECTOR)?;
+        // println!("Обрабатываем Телеграм: {}  {selector:?} ", url);
+        //
+        // document
+        //     .select(&selector)
+        //     .next()
+        //     .and_then(|img| {
+        //         println!("Найдено img {img:?}");
+        //
+        //         img.value().attr("src")
+        //     })
+        //     .map(|src| {
+        //         println!("Найдено src {src}");
+        //         LogoJob::new(id, src.to_string())
+        //     })
+        //     .map(Some)
+        //     .ok_or_else(|| {
+        //         Box::new(std::io::Error::new(
+        //             std::io::ErrorKind::NotFound,
+        //             "Изображение не найдено на странице Telegram",
+        //         )) as Box<dyn Error>
+        //     })
     }
 
     async fn process_vk_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
         // https://smm-e.ru/services/vk/groups/download-cover/
-        println!("Обрабатываем VK: {}", url);
+        println!("Не обрабатываем VK: {}", url);
         Ok(Some(LogoJob::new(id, url.to_string())))
     }
 
     async fn process_rustore_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
         const RUSTORE_SELECTOR: &str = r#"img[data-testid="icon"]"#;
-        let html = reqwest::get(url).await?.text().await?;
-        let document = Html::parse_document(&html);
-        let selector = Selector::parse(RUSTORE_SELECTOR)?;
-        println!("Обрабатываем RuStore: {} {selector:?}", url);
+        println!("Не обрабатываем RuStore: {}", url);
 
-        for img in document.select(&selector) {
-            println!("selector {selector:?}");
-            if let Some(srcset) = img.value().attr("srcset") {
-                println!("srcset {srcset:?}");
-
-                let first_url = srcset
-                    .split(',')
-                    .next()
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(url);
-
-                return Ok(Some(LogoJob::new(id, first_url.to_string())));
-            }
-        }
+        // let html = reqwest::get(url).await?.text().await?;
+        // let document = Html::parse_document(&html);
+        // let selector = Selector::parse(RUSTORE_SELECTOR)?;
+        //
+        // for img in document.select(&selector) {
+        //     println!("selector {selector:?}");
+        //     if let Some(srcset) = img.value().attr("srcset") {
+        //         println!("srcset {srcset:?}");
+        //
+        //         let first_url = srcset
+        //             .split(',')
+        //             .next()
+        //             .map(|s| s.trim())
+        //             .filter(|s| !s.is_empty())
+        //             .unwrap_or(url);
+        //
+        //         return Ok(Some(LogoJob::new(id, first_url.to_string())));
+        //     }
+        // }
 
         Ok(Some(LogoJob::new(id, url.to_string())))
     }
 
     async fn process_appstore_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
-        println!("Обрабатываем AppStore: {}", url);
+        println!("Не обрабатываем AppStore: {}", url);
         Ok(Some(LogoJob::new(id, url.to_string())))
 
         // const APPSTORE_SELECTOR: &str = r#"source[srcset]"#;
@@ -229,74 +232,41 @@ impl UrlType {
     }
 
     async fn process_web_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
-        let response = reqwest::get(url).await?;
-        let html_content = response.text().await?;
-        let document = Html::parse_document(&html_content);
+        println!("Не обрабатываем веб страницы: {}", url);
+        Ok(Some(LogoJob::new(id, url.to_string())))
 
-        let mut icons = Vec::new();
-        let base_url = Url::parse(url)?;
-
-        // Поиск различных типов иконок
-        let icon_selectors = [
-            ("icon", "link[rel='icon']"),
-            ("shortcut icon", "link[rel='shortcut icon']"),
-            ("apple-touch-icon", "link[rel='apple-touch-icon']"),
-            ("mask-icon", "link[rel='mask-icon']"),
-            ("fluid-icon", "link[rel='fluid-icon']"),
-        ];
-
-        for (icon_type, selector_str) in icon_selectors.iter() {
-            if let Ok(selector) = Selector::parse(selector_str) {
-                for element in document.select(&selector) {
-                    if let Some(href) = element.value().attr("href") {
-                        if let Ok(absolute_url) = base_url.join(href) {
-                            let sizes = element.value().attr("sizes").map(String::from);
-                            icons.push(IconInfo {
-                                url: absolute_url.to_string(),
-                                icon_type: icon_type.to_string(),
-                                sizes,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        // Поиск Open Graph изображения
-        if let Ok(selector) = Selector::parse("meta[property='og:image']") {
-            for element in document.select(&selector) {
-                if let Some(content) = element.value().attr("content") {
-                    if let Ok(absolute_url) = base_url.join(content) {
-                        icons.push(IconInfo {
-                            url: absolute_url.to_string(),
-                            icon_type: "og:image".to_string(),
-                            sizes: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        // Поиск Twitter изображения
-        if let Ok(selector) = Selector::parse("meta[name='twitter:image']") {
-            for element in document.select(&selector) {
-                if let Some(content) = element.value().attr("content") {
-                    if let Ok(absolute_url) = base_url.join(content) {
-                        icons.push(IconInfo {
-                            url: absolute_url.to_string(),
-                            icon_type: "twitter:image".to_string(),
-                            sizes: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        if icons.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(LogoJob::new(id, icons[0].url.clone())))
-        }
+        // let response = reqwest::get(url).await?;
+        // let html_content = response.text().await?;
+        // let document = Html::parse_document(&html_content);
+        //
+        // let mut icons = Vec::new();
+        // let base_url = Url::parse(url)?;
+        //
+        // // Поиск различных типов иконок
+        // let icon_selectors = [
+        //     ("icon", "link[rel='icon']"),
+        //     ("shortcut icon", "link[rel='shortcut icon']"),
+        //     ("apple-touch-icon", "link[rel='apple-touch-icon']"),
+        //     ("mask-icon", "link[rel='mask-icon']"),
+        //     ("fluid-icon", "link[rel='fluid-icon']"),
+        // ];
+        //
+        // for (icon_type, selector_str) in icon_selectors.iter() {
+        //     if let Ok(selector) = Selector::parse(selector_str) {
+        //         for element in document.select(&selector) {
+        //             if let Some(href) = element.value().attr("href") {
+        //                 if let Ok(absolute_url) = base_url.join(href) {
+        //                     let sizes = element.value().attr("sizes").map(String::from);
+        //                     icons.push(IconInfo {
+        //                         url: absolute_url.to_string(),
+        //                         icon_type: icon_type.to_string(),
+        //                         sizes,
+        //                     });
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     async fn process_image_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
@@ -319,7 +289,7 @@ impl UrlType {
     }
 
     async fn process_yandex_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
-        println!("Обработка yandex страницы {url}");
+        println!("Не обработываем yandex страницы {url}");
         return Ok(Some(LogoJob::new(id, url.to_string())));
         let html = reqwest::get(url).await?.text().await?;
         let document = Html::parse_document(&html);
@@ -349,7 +319,7 @@ impl UrlType {
         Ok(None)
     }
     async fn process_hh_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {
-        println!("Обработка hh страницы {url}");
+        println!("Не обрабатываем  hh страницы {url}");
         Ok(Some(LogoJob::new(id, url.to_string())))
     }
 
