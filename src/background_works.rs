@@ -1,4 +1,4 @@
-use image::{imageops::FilterType, DynamicImage, GenericImageView, RgbImage, Rgba, RgbaImage};
+use image::{imageops::FilterType, GenericImageView, RgbImage, Rgba, RgbaImage};
 use imageproc::rect::Rect;
 use kmeans_colors::{get_kmeans, Sort};
 use log::info;
@@ -10,36 +10,24 @@ pub struct DominantColor {
     pub color: Srgb<u8>,
     pub score: f32,
     pub average: u8,
+    pub k: usize,
 }
 
 impl DominantColor {
     pub fn remove_image_background(&self, big_rgba_image: &mut RgbaImage) {
         const TOLERANCE: u8 = 30;
-        const NO_TRANSPARENCY: u8 = 255;
-        const TRANSPARENCY: u8 = 0;
-
-        let r = self.color.red;
-        let g = self.color.green;
-        let b = self.color.blue;
-
-        // Предвычисляем границы
-        let (r_low, r_high) = (r.saturating_sub(TOLERANCE), r.saturating_add(TOLERANCE));
-        let (g_low, g_high) = (g.saturating_sub(TOLERANCE), g.saturating_add(TOLERANCE));
-        let (b_low, b_high) = (b.saturating_sub(TOLERANCE), b.saturating_add(TOLERANCE));
+        let (r, g, b) = (self.color.red, self.color.green, self.color.blue);
 
         // Используем прямой доступ к данным
         let pixels = big_rgba_image.as_mut();
         for pixel in pixels.chunks_exact_mut(4) {
-            let is_in_range = pixel[0] >= r_low
-                && pixel[0] <= r_high
-                && pixel[1] >= g_low
-                && pixel[1] <= g_high
-                && pixel[2] >= b_low
-                && pixel[2] <= b_high;
-            pixel[3] = if is_in_range {
-                TRANSPARENCY
+            pixel[3] = if pixel[0].abs_diff(r) <= TOLERANCE
+                && pixel[1].abs_diff(g) <= TOLERANCE
+                && pixel[2].abs_diff(b) <= TOLERANCE
+            {
+                0
             } else {
-                NO_TRANSPARENCY
+                255
             };
         }
     }
@@ -71,9 +59,8 @@ impl DominantColor {
 
         // Параметры кластеризации
         // const K: usize = 5;
-        let n = lab_pixels.len();
         // Подбор K: больше пикселей — больше кластеров, в разумных пределах 3..=8
-        let k = (3 + (n / 5000).min(5)).clamp(3, 8);
+        let k = (3 + (lab_pixels.len() / 9000).min(5)).clamp(4, 6);
         const MAX_ITER: usize = 100;
         const CONVERGE: f32 = 1.0;
 
@@ -97,6 +84,7 @@ impl DominantColor {
             color: dominant_rgb,
             score: dominant.percentage,
             average: dominant_color_average,
+            k: k,
         })
     }
 }

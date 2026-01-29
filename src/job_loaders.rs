@@ -1,7 +1,7 @@
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::parsers::Root;
 
@@ -43,7 +43,7 @@ impl Jobs {
         let image_extensions = ["jpg", "jpeg", "png", "gif", "webp"];
 
         let logos: Vec<LogoJob> = fs::read_dir(path)
-            .expect("Failed to read job directory")
+            .expect("Ошибка чтения директории job")
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.path().is_file())
             .filter(|entry| {
@@ -69,7 +69,7 @@ impl Jobs {
     }
 
     /// Загрузка задачи по созданию логотипов
-    pub async fn load_json_job(json_file_path: &str, temp_job_path: Option<&Path>) -> Jobs {
+    pub async fn load_json_job(json_file_path: &str, temp_job_path: &PathBuf) -> Self {
         println!("Скачка файла {}", json_file_path);
         // Чтение файла с обработкой возможных ошибок
         let json_content =
@@ -87,15 +87,19 @@ impl Jobs {
             .flatten()
             .collect();
 
-        // Сохранить задачу на всякий случай
-        if let Some(temp_path) = temp_job_path {
-            let json_content = serde_json::to_string_pretty(&logos)
-                .expect("Невозможно создать запасной json задания");
-            fs::write(temp_path, json_content).expect("Ошибка сохранения запасного json задания");
-        }
-
         println!("Загружено заданий {}", logos.len());
 
-        Jobs { logos }
+        let jobs = Jobs { logos };
+        // Сохранить задачу на всякий случай
+
+        jobs.jobs_backup(temp_job_path);
+        jobs
+    }
+
+    /// Сохраняет список заданий в JSON по указанному пути (резервная копия).
+    fn jobs_backup(&self, path: &Path) {
+        let json = serde_json::to_string_pretty(&self.logos)
+            .expect("Невозможно создать запасной json задания");
+        fs::write(path, json).expect("Ошибка сохранения запасного json задания");
     }
 }

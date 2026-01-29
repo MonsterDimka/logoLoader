@@ -1,10 +1,10 @@
 use crate::background_works::DominantColor;
 use crate::vectorize;
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use image::{DynamicImage, RgbaImage};
 use log::info;
-use oxipng::{Options, optimize_from_memory};
+use oxipng::{optimize_from_memory, Options};
 use std::error::Error;
 use std::path::Path;
 
@@ -38,6 +38,21 @@ pub fn save_ready_logo(
     let vector_svg_logo = vectorize::image_vectorize_to_svg(&image)?;
     let should_use_vector =
         vector_svg_logo.len() / KILOBYTE < MAX_VECTOR_LOGO_SIZE && background_color.score > 0.5;
+    if should_use_vector {
+        info!(
+            "Для {image_file_name} PNG {} SVG {} score {} выбран SVG {should_use_vector}",
+            base64_png_logo.len(),
+            vector_svg_logo.len(),
+            background_color.score
+        )
+    } else {
+        info!(
+            "Для {image_file_name} PNG {} SVG {}  score {} выбран PNG {should_use_vector}",
+            base64_png_logo.len(),
+            vector_svg_logo.len(),
+            background_color.score
+        )
+    };
 
     // Если векторизация большого размера используем PNG
     let logo_svg = if should_use_vector {

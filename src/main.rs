@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("Скачка задания {}", job_path.to_str().unwrap());
     // let logos = Jobs::generate_job_from_dir_images(config.download_folder().to_str().unwrap());
     // let logos = loaders::simple_load_job(JSON_FILE_PATH)?;
-    let logos = Jobs::load_json_job(config.job(), Some(&config.temp_job_file())).await;
+    let logos = Jobs::load_json_job(config.job(), &config.temp_job_file()).await;
 
     for folder in config.all_folders() {
         create_dir(&folder)?;

@@ -184,12 +184,13 @@ async fn process_single_logo(
 
     // Логирование
     info!(
-        "{} Доминирующий цвет: RGB({} {} {})  Всего: {}%",
+        "{} Доминирующий цвет: RGB({} {} {})  Всего: {}% k: {}",
         small_image_name.display(),
         background.color.red,
         background.color.green,
         background.color.blue,
-        percent
+        percent,
+        background.k
     );
 
     // Создание SVG
@@ -234,7 +235,7 @@ fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + 
                 let msg = format!(
                     "Файл не найден: {} (и варианты с расширениями: {})",
                     image_name.display(),
-                    IMAGE_EXTENSIONS[..8].join(", ")
+                    IMAGE_EXTENSIONS.join(", ")
                 );
                 error!("{}", msg);
                 msg
