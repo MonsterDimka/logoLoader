@@ -1,4 +1,4 @@
-use crate::background_works::{DominantColor, trim_transparent_border};
+use crate::background_works::{trim_transparent_border, DominantColor};
 use crate::config::Config;
 use crate::job_loaders::{Jobs, LogoJob};
 use crate::svg_saver::save_ready_logo;
@@ -22,12 +22,14 @@ pub async fn remove_border_parallel(
     let mut tasks = Vec::new();
     let download_folder = config.download_folder();
     let crop_folder = config.crop_folder();
+    let upscale_folder = config.upscale_folder();
 
     for logo in jobs.logos.clone() {
         let download_folder = download_folder.clone();
         let crop_folder = crop_folder.clone();
+        let upscale_folder = upscale_folder.clone();
         tasks.push(tokio::spawn(async move {
-            let result = remove_border(logo, &download_folder, &crop_folder).await;
+            let result = remove_border(logo, &download_folder, &crop_folder, &upscale_folder).await;
             result
         }));
     }
@@ -51,15 +53,25 @@ async fn remove_border(
     logo: LogoJob,
     download_folder: &Path,
     crop_folder: &Path,
+    upscale_folder: &Path,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     const BORDER_SIZE: u32 = 1;
+    const BIG_SIZE: u32 = 900;
 
     let id = logo.id;
-    let small_image_name = download_folder.join(format!("{}.jpg", id));
+    let small_image_name = download_folder.join(format!("{}", id));
     let small_rgb_image = load_image(&small_image_name)?;
     let (w, h) = small_rgb_image.dimensions();
+
+    // Большие файлы сразу сохраняем в высокое разрешение
+    let folder = if w > BIG_SIZE || h > BIG_SIZE {
+        upscale_folder
+    } else {
+        crop_folder
+    };
+
     if w >= (BORDER_SIZE + 1) && h >= (BORDER_SIZE + 1) {
-        let output_path = crop_folder.join(format!("{}.jpg", id));
+        let output_path = folder.join(format!("{}.png", id));
         small_rgb_image
             .crop_imm(
                 BORDER_SIZE,
@@ -196,23 +208,22 @@ async fn process_single_logo(
 }
 
 /// Расширения форматов, поддерживаемых ImageReader при включённых фичах крейта image.
-const IMAGE_EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif", "tga", "qoi",
-    "pnm", "pbm", "pgm", "ppm", "pam", "exr", "hdr", "dds", "ff",
-];
 
 /// Загружает изображение из файла. В `image_name` передаётся путь без расширения —
 /// функция ищет файл с подходящим расширением (png, jpg, gif, webp и др.) и загружает его.
 /// Если в пути уже есть расширение и файл существует, используется он.
 fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + Sync>> {
+    const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico"];
+
     let path_to_open = if image_name.exists() {
         image_name.to_path_buf()
     } else {
         // Путь без расширения или файл не найден — ищем по расширениям
         let base = match image_name.extension() {
-            Some(_) => image_name.parent().unwrap_or(image_name).join(
-                image_name.file_stem().unwrap_or_default(),
-            ),
+            Some(_) => image_name
+                .parent()
+                .unwrap_or(image_name)
+                .join(image_name.file_stem().unwrap_or_default()),
             None => image_name.to_path_buf(),
         };
         IMAGE_EXTENSIONS
@@ -238,7 +249,7 @@ fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + 
     let (width, height) = image.dimensions();
 
     info!(
-        "Загружена картинка: {} Размер {}x{}",
+        "Загружена картинка: {} Размер: {}x{}",
         path_to_open.display(),
         width,
         height
