@@ -1,6 +1,6 @@
-use image::{DynamicImage, GenericImageView, RgbImage, Rgba, RgbaImage};
+use image::{imageops::FilterType, DynamicImage, GenericImageView, RgbImage, Rgba, RgbaImage};
 use imageproc::rect::Rect;
-use kmeans_colors::{Sort, get_kmeans};
+use kmeans_colors::{get_kmeans, Sort};
 use log::info;
 use palette::cast::from_component_slice;
 use palette::{IntoColor, Lab, Srgb};
@@ -48,19 +48,37 @@ impl DominantColor {
     pub fn from_rgb_image(
         rgb_img: RgbImage,
     ) -> Result<DominantColor, Box<dyn Error + Send + Sync>> {
+        const MAX_SIDE: u32 = 300;
+
+        // Уменьшаем изображение для ускорения и устойчивости k-means
+        let (w, h) = rgb_img.dimensions();
+        let small_img = if w.max(h) > MAX_SIDE {
+            let (nw, nh) = if w >= h {
+                (MAX_SIDE, (h * MAX_SIDE / w).max(1))
+            } else {
+                ((w * MAX_SIDE / h).max(1), MAX_SIDE)
+            };
+            image::imageops::resize(&rgb_img, nw, nh, FilterType::Triangle)
+        } else {
+            rgb_img
+        };
+
         // Конвертация в Lab для лучшей кластеризации
-        let lab_pixels: Vec<Lab> = from_component_slice::<Srgb<u8>>(&rgb_img)
+        let lab_pixels: Vec<Lab> = from_component_slice::<Srgb<u8>>(&small_img)
             .iter()
             .map(|&srgb| srgb.into_linear().into_color())
             .collect();
 
         // Параметры кластеризации
-        const K: usize = 5;
+        // const K: usize = 5;
+        let n = lab_pixels.len();
+        // Подбор K: больше пикселей — больше кластеров, в разумных пределах 3..=8
+        let k = (3 + (n / 5000).min(5)).clamp(3, 8);
         const MAX_ITER: usize = 100;
         const CONVERGE: f32 = 1.0;
 
         // K-means кластеризация
-        let result = get_kmeans(K, MAX_ITER, CONVERGE, false, &lab_pixels, 0);
+        let result = get_kmeans(k, MAX_ITER, CONVERGE, false, &lab_pixels, 0);
 
         // Сортировка по доминированию
         let mut colors = Lab::sort_indexed_colors(&result.centroids, &result.indices);
