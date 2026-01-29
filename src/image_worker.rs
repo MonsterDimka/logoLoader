@@ -159,7 +159,6 @@ async fn process_single_logo(
     let small_rgb_image = load_image(&small_image_name)?.to_rgb8();
     // Получение доминирующего в изображении цвета (цвета фона)
     let background = DominantColor::from_rgb_image(small_rgb_image)?;
-    // let big_rgba_image = load_image(&big_image_name)?.to_rgba8();
     let mut final_image = load_image(&big_image_name)?.to_rgba8();
 
     // Удаление фона
