@@ -195,26 +195,51 @@ async fn process_single_logo(
     Ok(())
 }
 
-fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + Sync>> {
-    // Проверка существования файла
-    if !image_name.exists() {
-        println!("Файл не найден: {}", image_name.display());
-        error!("Файл не найден: {}", image_name.display());
-    }
+/// Расширения форматов, поддерживаемых ImageReader при включённых фичах крейта image.
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tif", "tga", "qoi",
+    "pnm", "pbm", "pgm", "ppm", "pam", "exr", "hdr", "dds", "ff",
+];
 
-    let image = ImageReader::open(image_name)?
+/// Загружает изображение из файла. В `image_name` передаётся путь без расширения —
+/// функция ищет файл с подходящим расширением (png, jpg, gif, webp и др.) и загружает его.
+/// Если в пути уже есть расширение и файл существует, используется он.
+fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + Sync>> {
+    let path_to_open = if image_name.exists() {
+        image_name.to_path_buf()
+    } else {
+        // Путь без расширения или файл не найден — ищем по расширениям
+        let base = match image_name.extension() {
+            Some(_) => image_name.parent().unwrap_or(image_name).join(
+                image_name.file_stem().unwrap_or_default(),
+            ),
+            None => image_name.to_path_buf(),
+        };
+        IMAGE_EXTENSIONS
+            .iter()
+            .map(|ext| base.with_extension(ext))
+            .find(|p| p.exists())
+            .ok_or_else(|| {
+                let msg = format!(
+                    "Файл не найден: {} (и варианты с расширениями: {})",
+                    image_name.display(),
+                    IMAGE_EXTENSIONS[..8].join(", ")
+                );
+                error!("{}", msg);
+                msg
+            })?
+    };
+
+    let image = ImageReader::open(&path_to_open)?
         .with_guessed_format()?
         .decode()?;
 
-    // Проверяем, есть ли альфа-канал и конвертируем в RGB если нужно
     let image = flatten_alpha_channel(image);
-
     let (width, height) = image.dimensions();
 
-    // Логирование
     info!(
-        "Загружена картинка: {} Размер картинки {}x{} формат",
-        image_name.display(),
+        "Загружена картинка: {} Размер {}x{}",
+        path_to_open.display(),
         width,
         height
     );
