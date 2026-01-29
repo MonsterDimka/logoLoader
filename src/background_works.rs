@@ -1,5 +1,4 @@
 use image::{imageops::FilterType, GenericImageView, RgbImage, Rgba, RgbaImage};
-use imageproc::rect::Rect;
 use kmeans_colors::{get_kmeans, Sort};
 use log::info;
 use palette::cast::from_component_slice;
@@ -100,18 +99,10 @@ pub fn trim_transparent_border(image: &RgbaImage) -> RgbaImage {
     // Находим bounding box непрозрачных пикселей
     for (x, y, pixel) in image.enumerate_pixels() {
         if pixel[3] != 0 {
-            if x < min_x {
-                min_x = x;
-            }
-            if x > max_x {
-                max_x = x;
-            }
-            if y < min_y {
-                min_y = y;
-            }
-            if y > max_y {
-                max_y = y;
-            }
+            min_x = min_x.min(x);
+            max_x = max_x.max(x);
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
         }
     }
 
@@ -121,17 +112,14 @@ pub fn trim_transparent_border(image: &RgbaImage) -> RgbaImage {
     }
 
     // Создаем прямоугольник для обрезки
-    let rect = Rect::at(min_x as i32, min_y as i32).of_size(max_x - min_x + 1, max_y - min_y + 1);
+    let w = max_x - min_x + 1;
+    let h = max_y - min_y + 1;
+    let cropped_view = image.view(min_x, min_y, w, h);
 
-    // Используем view для получения обрезанного изображения
-    let cropped_view = image.view(
-        rect.left() as u32,
-        rect.top() as u32,
-        rect.width(),
-        rect.height(),
+    info!(
+        "Обрезка прозрачных краев: {}x{} at ({}, {})",
+        w, h, min_x, min_y
     );
-
-    info!("Обрезка прозрачных краев изображения: {:?}", rect);
 
     cropped_view.to_image()
 }

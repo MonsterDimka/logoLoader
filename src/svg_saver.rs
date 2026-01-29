@@ -33,7 +33,7 @@ pub fn save_ready_logo(
     background_color: DominantColor,
     image_file_name: &str,
     optimize: bool,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let base64_png_logo = make_png_base64(&image, optimize)?;
     let vector_svg_logo = vectorize::image_vectorize_to_svg(&image)?;
     let should_use_vector =
@@ -119,21 +119,15 @@ struct LogoTransform {
 
 impl LogoTransform {
     fn calculate_transform(image: &RgbaImage) -> LogoTransform {
-        let (width, height) = (image.width() as f64, image.height() as f64);
-        let target_size = WIDTH_HEIGHT as f64;
+        let (w, h) = (image.width() as f64, image.height() as f64);
+        let target = WIDTH_HEIGHT as f64;
 
-        let scale_x = target_size / width;
-        let scale_y = target_size / height;
-        let base_scale = scale_x.min(scale_y) * LOGO_SCALE_FACTOR;
-
-        let scaled_width = width * base_scale;
-        let scaled_height = height * base_scale;
-
-        let offset_x = (target_size - scaled_width) / 2.0;
-        let offset_y = (target_size - scaled_height) / 2.0;
+        let scale = (target / w).min(target / h) * LOGO_SCALE_FACTOR;
+        let offset_x = (target - w * scale) / 2.0;
+        let offset_y = (target - h * scale) / 2.0;
 
         LogoTransform {
-            scale: base_scale,
+            scale,
             offset_x,
             offset_y,
         }
@@ -141,28 +135,25 @@ impl LogoTransform {
 
     fn calculate_png_transform(image: &RgbaImage, name: &str) -> LogoTransform {
         let (width, height) = (image.width() as f64, image.height() as f64);
-        let target_size = WIDTH_HEIGHT as f64;
+        let target = WIDTH_HEIGHT as f64;
+        let scale = LOGO_SCALE_FACTOR;
 
-        let scale_x = target_size / width;
-        let scale_y = target_size / height;
-        let base_scale = LOGO_SCALE_FACTOR;
+        let scaled_size = target * scale;
+        let offset = (target - scaled_size) / 2.0;
 
-        let scaled_width = target_size * base_scale;
-        let scaled_height = target_size * base_scale;
-
-        let offset_x = (target_size - scaled_width) / 2.0;
-        let offset_y = (target_size - scaled_height) / 2.0;
         info!(
             r#"Размер картинки {name} подрезанный: {width:.2}x{height:.2}
-Сжатие до размера 300x300: {scale_x:.2}x{scale_y:.2} => Итоговое сжатие: {base_scale:.2}
-Сжатый размер: {scaled_width:.2}x{scaled_height:.2}
-Смещение к центру: {offset_x:.2}x{offset_y:.2}"#,
+Сжатие до размера 300x300: {scale_x:.2}x{scale_y:.2} => Итоговое сжатие: {scale:.2}
+Сжатый размер: {scaled_size:.2}x{scaled_size:.2}
+Смещение к центру: {offset:.2}x{offset:.2}"#,
+            scale_x = target / width,
+            scale_y = target / height,
         );
 
         LogoTransform {
-            scale: base_scale,
-            offset_x,
-            offset_y,
+            scale,
+            offset_x: offset,
+            offset_y: offset,
         }
     }
     fn full_size() -> LogoTransform {
@@ -174,7 +165,7 @@ impl LogoTransform {
     }
 }
 
-fn make_png_base64(image: &RgbaImage, optimize: bool) -> Result<String, Box<dyn Error>> {
+fn make_png_base64(image: &RgbaImage, optimize: bool) -> Result<String, Box<dyn Error + Send + Sync>> {
     // Конвертируем изображение в PNG bytes
     let dimage = DynamicImage::ImageRgba8(image.clone());
     let mut png_bytes = Vec::new();
@@ -192,20 +183,3 @@ fn make_png_base64(image: &RgbaImage, optimize: bool) -> Result<String, Box<dyn 
     };
     Ok(base64_image)
 }
-
-// <?xml version="1.0" encoding="UTF-8"?>
-// <svg width="300px" height="300px" viewBox="0 0 300 300" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-// <title>none copy 2646</title>
-// <g id="none-copy-2646" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
-// <g id="Group" mask="url(#mask-2)" opacity="0.230073475" stroke="#000000">
-// <g id="Group">
-// <circle id="Oval" cx="150" cy="150" r="149.5"></circle>
-// <line x1="0" y1="150" x2="300" y2="150" id="Line" stroke-linecap="square"></line>
-// <line x1="0" y1="150" x2="300" y2="150" id="Line" stroke-linecap="square" transform="translate(150, 150) rotate(-270) translate(-150, -150)"></line>
-// <line x1="0" y1="150" x2="300" y2="150" id="Line" stroke-linecap="square" transform="translate(150, 150) rotate(-225) translate(-150, -150)"></line>
-// <line x1="0" y1="150" x2="300" y2="150" id="Line" stroke-linecap="square" transform="translate(150, 150) rotate(-315) translate(-150, -150)"></line>
-// <rect id="Rectangle" x="63.5" y="63.5" width="173" height="173"></rect>
-// </g>
-// </g>
-// </g>
-// </svg>

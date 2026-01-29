@@ -159,8 +159,8 @@ async fn process_single_logo(
     let small_rgb_image = load_image(&small_image_name)?.to_rgb8();
     // Получение доминирующего в изображении цвета (цвета фона)
     let background = DominantColor::from_rgb_image(small_rgb_image)?;
-    let big_rgba_image = load_image(&big_image_name)?.to_rgba8();
-    let mut final_image = big_rgba_image;
+    // let big_rgba_image = load_image(&big_image_name)?.to_rgba8();
+    let mut final_image = load_image(&big_image_name)?.to_rgba8();
 
     // Удаление фона
     if background.score > MIN_SCORE_DOMINANT_COLOR {
@@ -169,7 +169,7 @@ async fn process_single_logo(
     }
 
     // Выбор цвета фона серый для белого фона и доминантный для остальных
-    let background: DominantColor = if background.average > WHITE_COLOR {
+    let background = if background.average > WHITE_COLOR {
         DominantColor {
             color: GRAY_BACKGROUND_COLOR,
             ..background
@@ -194,8 +194,28 @@ async fn process_single_logo(
     );
 
     // Создание SVG
-    let image_path_str = new_image_name.to_str().ok_or("Invalid path")?;
-    let _ = save_ready_logo(final_image, id, background, image_path_str, true);
+    // let image_path_str = new_image_name
+    //     .to_str()
+    //     .ok_or("Неверный путь для сохранения SVG")?;
+    // save_ready_logo(final_image, id, background, image_path_str, true)?;
+
+    // Создание SVG — сохраняем в пуле блокирующих задач, чтобы не блокировать async-рантайм
+    let image_path_string = new_image_name.to_string_lossy().into_owned();
+    let save_result = tokio::task::spawn_blocking(move || {
+        save_ready_logo(final_image, id, background, &image_path_string, true)
+    })
+    .await;
+
+    match save_result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            )))
+        }
+        Err(e) => return Err(Box::new(e)),
+    }
 
     info!(
         "{} Таска закончена. Задача:{} Файлы для обработки: {} {} Сохранение {}",
