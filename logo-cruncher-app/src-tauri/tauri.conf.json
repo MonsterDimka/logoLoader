@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "logo-cruncher-app",
-        "width": 800,
-        "height": 600
+        "title": "Logo Cruncher 1.0",
+        "width": 1024,
+        "height": 768
       }
     ],
     "security": {
