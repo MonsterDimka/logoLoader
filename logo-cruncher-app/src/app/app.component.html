@@ -19,7 +19,8 @@
 
     <form [formGroup]="feedbackForm" (ngSubmit)="onSubmit()">
         <textarea formControlName="reason" placeholder="Enter reason" rows="4" cols="50"></textarea>
-        <button type="submit">Submit</button>
+        <button type="submit">Обработать</button>
+        <p-button label="Обработать"/>
     </form>
 
     <div class="image-gallery">
