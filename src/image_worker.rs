@@ -16,7 +16,7 @@ const WHITE_COLOR: u8 = 250;
 const MIN_SCORE_DOMINANT_COLOR: f32 = 0.5;
 const GRAY_BACKGROUND_COLOR: Srgb<u8> = Srgb::new(238, 237, 241);
 pub async fn remove_border_parallel(
-    jobs: Jobs,
+    jobs: &Jobs,
     config: &Config,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let bar = ProgressBar::new(jobs.logos.len() as u64);
@@ -32,7 +32,8 @@ pub async fn remove_border_parallel(
         let crop_folder = crop_folder.clone();
         let upscale_folder = upscale_folder.clone();
         tasks.push(tokio::spawn(async move {
-            let result = remove_border(logo, &download_folder, &crop_folder, &upscale_folder).await;
+            let result =
+                remove_border(&logo, &download_folder, &crop_folder, &upscale_folder).await;
             bar_clone.inc(1);
             result
         }));
@@ -55,7 +56,7 @@ pub async fn remove_border_parallel(
 }
 
 async fn remove_border(
-    logo: LogoJob,
+    logo: &LogoJob,
     download_folder: &Path,
     crop_folder: &Path,
     upscale_folder: &Path,
@@ -90,7 +91,7 @@ async fn remove_border(
 }
 
 pub async fn images_works_parallel(
-    jobs: Jobs,
+    jobs: &Jobs,
     config: &Config,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let bar = ProgressBar::new(jobs.logos.len() as u64);
@@ -102,7 +103,7 @@ pub async fn images_works_parallel(
     let result_folder = config.result_folder();
     println!("Векторизация");
 
-    for logo in jobs.logos {
+    for logo in jobs.logos.clone() {
         let bar_clone = bar.clone();
         let download_folder = download_folder.clone();
         let upscale_folder = upscale_folder.clone();

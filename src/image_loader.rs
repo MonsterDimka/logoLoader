@@ -1,22 +1,23 @@
 use crate::config::Config;
-use crate::job_loaders::Jobs;
+use crate::job_loaders::{Jobs, LogoJob};
 use log::info;
 use std::error::Error;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
 // Скачать все изображения с сервера
-pub async fn download_images(job: Jobs, config: &Config) {
+pub async fn download_images(job: &Jobs, config: &Config) {
     let client = reqwest::Client::new();
     let mut tasks = Vec::new();
     let mut counter = 0;
     let download_folder = config.download_folder();
     let rework_folder = config.rework_svg_folder();
 
-    for logo in job.logos {
+    for logo in &job.logos {
         let client = client.clone();
         let download_folder = download_folder.clone();
         let rework_folder = rework_folder.clone();
+        let logo = logo.clone();
 
         tasks.push(tokio::spawn(async move {
             // Делаем HEAD запрос сначала, чтобы получить Content-Type
@@ -45,7 +46,8 @@ pub async fn download_images(job: Jobs, config: &Config) {
                 rework_folder.join(format!("{}.{}", logo.id, extension))
             };
 
-            let _ = get_image_by_job(&logo.url, &filename).await;
+            get_image_by_job(&logo.url, &filename).await;
+
             info!(
                 "{} Файл '{}' -> {} успешно скачан",
                 counter,

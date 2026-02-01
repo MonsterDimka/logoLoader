@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     setup_logger(&config.log_file());
 
     println!("Скачка задания {}", job_path.to_str().unwrap());
-    let logos = Jobs::generate_job_from_dir_images(config.download_folder().to_str().unwrap());
+    let mut logos = Jobs::generate_job_from_dir_images(config.download_folder().to_str().unwrap());
     // let logos = loaders::simple_load_job(JSON_FILE_PATH)?;
     // let logos = Jobs::load_json_job(config.job(), &config.temp_job_file()).await;
 
@@ -23,15 +23,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     if config.download() {
-        download_images(logos.clone(), &config).await;
+        download_images(&logos, &config).await;
     }
 
-    remove_border_parallel(logos.clone(), &config).await?;
+    remove_border_parallel(&logos, &config).await?;
 
     if config.upscale() {
         upscale_images(&config).await?;
     }
-    images_works_parallel(logos.clone(), &config).await?;
+    images_works_parallel(&logos, &config).await?;
 
     Ok(())
 }
