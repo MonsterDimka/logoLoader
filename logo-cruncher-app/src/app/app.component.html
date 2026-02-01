@@ -16,12 +16,21 @@
         <button type="submit">Greet</button>
     </form>
     <p>{{ greetingMessage }}</p>
-    <p>{{ fileList }}</p>
-    <ul>
-        @for (item of fileList; track $index) {
-            <li>{{ item }}</li>
-        }
-    </ul>
+
+    <form [formGroup]="feedbackForm" (ngSubmit)="onSubmit()">
+        <textarea formControlName="reason" placeholder="Enter reason" rows="4" cols="50"></textarea>
+        <button type="submit">Submit</button>
+    </form>
+
+    <div class="image-gallery">
+        <h1>Список картинок</h1>
+        <div>
+            @for (url of imageUrls; track url) {
+                <img [src]="url" alt="" class="thumbnail" loading="lazy"
+                     (error)="$any($event.target).style.display='none'"/>
+            }
+        </div>
+    </div>
 
     <router-outlet/>
 </main>

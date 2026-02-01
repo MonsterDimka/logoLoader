@@ -1,22 +1,30 @@
 import {Component} from "@angular/core";
 import {RouterOutlet} from "@angular/router";
-import {invoke} from "@tauri-apps/api/core";
 import {open} from '@tauri-apps/plugin-dialog';
+import {invoke, convertFileSrc} from "@tauri-apps/api/core";
+import {FormControl, FormGroup, ReactiveFormsModule} from '@angular/forms';
 
 @Component({
     selector: "app-root",
-    imports: [RouterOutlet],
+    imports: [RouterOutlet, ReactiveFormsModule],
     templateUrl: "./app.component.html",
     styleUrl: "./app.component.css",
 })
 export class AppComponent {
     greetingMessage = "";
     dirs = "";
-    fileList: string[];
+    fileList: string[] = [];
+    imageUrls: string[] = [];
+    jsonJob: string = "";
 
-    constructor() {
-        this.fileList = ["None"];
+    feedbackForm = new FormGroup({
+        reason: new FormControl('Initial reason') // Form control with default value
+    });
+
+    onSubmit() {
+        console.log(this.feedbackForm.value.reason);
     }
+
 
     greet(event: SubmitEvent, name: string): void {
         event.preventDefault();
@@ -47,11 +55,19 @@ export class AppComponent {
     }
 
     // Пример вызова
+
+
+    isImageFile(path: string): boolean {
+        return /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(path);
+    }
+
     async loadFileList() {
         try {
             const files: string[] = await invoke("get_file_list");
-            console.log("Список файлов:", files);
-            this.fileList = files;  // например, в свойство компонента
+            this.fileList = files;
+            this.imageUrls = files
+                .filter(p => this.isImageFile(p))
+                .map(p => convertFileSrc(p));
         } catch (error) {
             console.error("Ошибка:", error);
         }
