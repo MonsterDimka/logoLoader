@@ -19,17 +19,21 @@ pub async fn remove_border_parallel(
     jobs: Jobs,
     config: &Config,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let bar = ProgressBar::new(jobs.logos.len() as u64);
     let mut tasks = Vec::new();
     let download_folder = config.download_folder();
     let crop_folder = config.crop_folder();
     let upscale_folder = config.upscale_folder();
+    println!("Обработка бордюров");
 
     for logo in jobs.logos.clone() {
+        let bar_clone = bar.clone();
         let download_folder = download_folder.clone();
         let crop_folder = crop_folder.clone();
         let upscale_folder = upscale_folder.clone();
         tasks.push(tokio::spawn(async move {
             let result = remove_border(logo, &download_folder, &crop_folder, &upscale_folder).await;
+            bar_clone.inc(1);
             result
         }));
     }
@@ -45,6 +49,7 @@ pub async fn remove_border_parallel(
             Err(e) => return Err(Box::new(e)),
         }
     }
+    bar.finish_with_message("Обработка краев завершена");
     info!("Обработка краев завершена");
     Ok(())
 }
@@ -95,6 +100,7 @@ pub async fn images_works_parallel(
     let download_folder = config.download_folder();
     let upscale_folder = config.upscale_folder();
     let result_folder = config.result_folder();
+    println!("Векторизация");
 
     for logo in jobs.logos {
         let bar_clone = bar.clone();
@@ -129,8 +135,8 @@ pub async fn images_works_parallel(
         }
     }
 
-    info!("Обработка завершена");
-    bar.finish_with_message("Обработка завершена");
+    info!("Векторизация завершена");
+    bar.finish_with_message("Векторизация завершена");
 
     Ok(())
 }
@@ -193,28 +199,10 @@ async fn process_single_logo(
     );
 
     // Создание SVG
-    // let image_path_str = new_image_name
-    //     .to_str()
-    //     .ok_or("Неверный путь для сохранения SVG")?;
-    // save_ready_logo(final_image, id, background, image_path_str, true)?;
-
-    // Создание SVG — сохраняем в пуле блокирующих задач, чтобы не блокировать async-рантайм
-    let image_path_string = new_image_name.to_string_lossy().into_owned();
-    let save_result = tokio::task::spawn_blocking(move || {
-        save_ready_logo(final_image, id, background, &image_path_string, true)
-    })
-    .await;
-
-    match save_result {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e.to_string(),
-            )))
-        }
-        Err(e) => return Err(Box::new(e)),
-    }
+    let image_path_str = new_image_name
+        .to_str()
+        .ok_or("Неверный путь для сохранения SVG")?;
+    save_ready_logo(final_image, id, background, image_path_str, true)?;
 
     info!(
         "{} Таска закончена. Задача:{} Файлы для обработки: {} {} Сохранение {}",
@@ -328,26 +316,32 @@ pub async fn upscale_images(config: &Config) -> Result<(), Box<dyn Error + Send 
     const COMPRESSION: usize = 100;
     const TYPE: &str = "png";
 
-    let status = Command::new(config.upscayl_bin())
-        .arg("-i")
-        .arg(input_path.to_str().ok_or("Invalid UTF-8 in input path")?)
-        .arg("-o")
-        .arg(output_path.to_str().ok_or("Invalid UTF-8 in output path")?)
-        .arg("-m")
-        .arg(config.upscayl_models())
-        .arg("-n")
-        .arg(config.upscayl_model())
-        .arg("-s")
-        .arg(SCALE.to_string())
-        .arg("-f")
-        .arg(TYPE)
-        .arg("-v")
-        .arg("-c")
-        .arg(COMPRESSION.to_string())
-        .status()?;
+    let args = [
+        "-i",
+        input_path
+            .to_str()
+            .ok_or("Неверный путь к файлам для апскейла")?,
+        "-o",
+        output_path
+            .to_str()
+            .ok_or("Неверный путь для вывода файлов для апскейла")?,
+        "-m",
+        config.upscayl_models(),
+        "-n",
+        config.upscayl_model(),
+        "-s",
+        &SCALE.to_string(),
+        "-f",
+        TYPE,
+        "-v",
+        "-c",
+        &COMPRESSION.to_string(),
+    ];
+
+    let status = Command::new(config.upscayl_bin()).args(args).status()?;
 
     if !status.success() {
-        return Err(format!("Upscayl failed for {}", input_path.display()).into());
+        return Err(format!("Ошибка апскейла: {}", input_path.display()).into());
     }
 
     info!("✅ Completed: {}", output_path.display());

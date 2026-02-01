@@ -11,10 +11,13 @@ pub async fn download_images(job: Jobs, config: &Config) {
     let mut tasks = Vec::new();
     let mut counter = 0;
     let download_folder = config.download_folder();
+    let rework_folder = config.rework_svg_folder();
 
     for logo in job.logos {
         let client = client.clone();
         let download_folder = download_folder.clone();
+        let rework_folder = rework_folder.clone();
+
         tasks.push(tokio::spawn(async move {
             // Делаем HEAD запрос сначала, чтобы получить Content-Type
             let extension = match client.head(&logo.url).send().await {
@@ -36,7 +39,12 @@ pub async fn download_images(job: Jobs, config: &Config) {
                 Err(_) => "none",
             };
 
-            let filename = download_folder.join(format!("{}.{}", logo.id, extension));
+            let filename = if extension != "svg" {
+                download_folder.join(format!("{}.{}", logo.id, extension))
+            } else {
+                rework_folder.join(format!("{}.{}", logo.id, extension))
+            };
+
             let _ = get_image_by_job(&logo.url, &filename).await;
             info!(
                 "{} Файл '{}' -> {} успешно скачан",

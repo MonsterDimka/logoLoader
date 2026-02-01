@@ -11,11 +11,13 @@ pub const LOG_FILE: &str = "logo.log";
 pub const RESULT_FOLDER: &str = "Logo/Result";
 pub const CROP_FOLDER: &str = "Logo/Crop";
 pub const TEMP_JOB_FILE: &str = "job.json";
+pub const SVG_REWORK_FOLDER: &str = "Logo/Rework";
 pub const DOWNLOAD: bool = true;
 pub const UPSCALE: bool = true;
 
 // Пути по умолчанию для Upscayl (macOS)
-pub const DEFAULT_UPSCALER_PROG: &str = "/Applications/Upscayl.app/Contents/Resources/bin/upscayl-bin";
+pub const DEFAULT_UPSCALER_PROG: &str =
+    "/Applications/Upscayl.app/Contents/Resources/bin/upscayl-bin";
 pub const DEFAULT_MODEL_PATH: &str = "/Applications/Upscayl.app/Contents/Resources/models";
 pub const DEFAULT_MODEL_NAME: &str = "upscayl-standard-4x";
 
@@ -111,7 +113,11 @@ impl Config {
         let content = match fs::read_to_string(path) {
             Ok(content) => content,
             Err(e) => {
-                eprintln!("Не удалось прочитать конфигурационный файл {}: {}", path.display(), e);
+                eprintln!(
+                    "Не удалось прочитать конфигурационный файл {}: {}",
+                    path.display(),
+                    e
+                );
                 return None;
             }
         };
@@ -122,7 +128,11 @@ impl Config {
                 Some(config)
             }
             Err(e) => {
-                eprintln!("Ошибка парсинга конфигурационного файла {}: {}", path.display(), e);
+                eprintln!(
+                    "Ошибка парсинга конфигурационного файла {}: {}",
+                    path.display(),
+                    e
+                );
                 None
             }
         }
@@ -134,24 +144,27 @@ impl Config {
         let config_path = self.find_config_path();
         let file_config = Self::load_file_config(&config_path);
         let upscayl = file_config.as_ref().and_then(|f| f.upscayl.as_ref());
-        
+
         Config {
             config_file: self.config_file,
             // CLI -> File -> Default (handled by getter methods)
-            job: self.job
+            job: self
+                .job
                 .or(file_config.as_ref().and_then(|f| f.job.clone())),
-            out_dir: self.out_dir
+            out_dir: self
+                .out_dir
                 .or(file_config.as_ref().and_then(|f| f.out_dir.clone())),
-            download: self.download
+            download: self
+                .download
                 .or(file_config.as_ref().and_then(|f| f.download)),
-            upscale: self.upscale
+            upscale: self
+                .upscale
                 .or(file_config.as_ref().and_then(|f| f.upscale)),
-            upscayl_bin: self.upscayl_bin
-                .or(upscayl.and_then(|u| u.bin.clone())),
-            upscayl_models: self.upscayl_models
+            upscayl_bin: self.upscayl_bin.or(upscayl.and_then(|u| u.bin.clone())),
+            upscayl_models: self
+                .upscayl_models
                 .or(upscayl.and_then(|u| u.models.clone())),
-            upscayl_model: self.upscayl_model
-                .or(upscayl.and_then(|u| u.model.clone())),
+            upscayl_model: self.upscayl_model.or(upscayl.and_then(|u| u.model.clone())),
         }
     }
 
@@ -205,6 +218,10 @@ impl Config {
         Path::new(self.out_dir()).join(RESULT_FOLDER)
     }
 
+    pub fn rework_svg_folder(&self) -> PathBuf {
+        Path::new(self.out_dir()).join(SVG_REWORK_FOLDER)
+    }
+
     /// Получить полный путь к директории обрезанных изображений
     pub fn crop_folder(&self) -> PathBuf {
         Path::new(self.out_dir()).join(CROP_FOLDER)
@@ -227,6 +244,7 @@ impl Config {
             self.upscale_folder(),
             self.result_folder(),
             self.crop_folder(),
+            self.rework_svg_folder(),
         ]
     }
 }
