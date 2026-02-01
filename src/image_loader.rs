@@ -2,8 +2,43 @@ use crate::config::Config;
 use crate::job_loaders::{Jobs, LogoJob};
 use log::info;
 use std::error::Error;
+use std::path::{Path, PathBuf};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+
+async fn detect_image_extension(
+    client: &reqwest::Client,
+    logo: &LogoJob,
+    download_folder: &Path,
+    rework_folder: &Path,
+) -> (String, PathBuf) {
+    let extension = match client.head(&logo.url).send().await {
+        Ok(response) => {
+            if let Some(content_type) = response.headers().get("content-type") {
+                match content_type.to_str().unwrap_or("") {
+                    "image/jpeg" => "jpg",
+                    "image/jpg" => "jpg",
+                    "image/png" => "png",
+                    "image/gif" => "gif",
+                    "image/webp" => "webp",
+                    "image/svg+xml" => "svg",
+                    _ => "none",
+                }
+            } else {
+                "none"
+            }
+        }
+        Err(_) => "none",
+    };
+
+    let name = format!("{}.{}", logo.id, extension);
+    let filename = match extension {
+        "svg" | "none" => rework_folder.join(&name),
+        _ => download_folder.join(&name),
+    };
+
+    (extension.to_string(), filename)
+}
 
 // Скачать все изображения с сервера
 pub async fn download_images(job: &Jobs, config: &Config) {
@@ -20,37 +55,12 @@ pub async fn download_images(job: &Jobs, config: &Config) {
         let logo = logo.clone();
 
         tasks.push(tokio::spawn(async move {
-            // Делаем HEAD запрос сначала, чтобы получить Content-Type
-            let extension = match client.head(&logo.url).send().await {
-                Ok(response) => {
-                    if let Some(content_type) = response.headers().get("content-type") {
-                        match content_type.to_str().unwrap_or("") {
-                            "image/jpeg" => "jpg",
-                            "image/jpg" => "jpg",
-                            "image/png" => "png",
-                            "image/gif" => "gif",
-                            "image/webp" => "webp",
-                            "image/svg+xml" => "svg",
-                            _ => "none", // fallback
-                        }
-                    } else {
-                        "none"
-                    }
-                }
-                Err(_) => "none",
-            };
-
-            let filename = if extension != "svg" {
-                download_folder.join(format!("{}.{}", logo.id, extension))
-            } else {
-                rework_folder.join(format!("{}.{}", logo.id, extension))
-            };
-
+            let (extension, filename) =
+                detect_image_extension(&client, &logo, &download_folder, &rework_folder).await;
             get_image_by_job(&logo.url, &filename).await;
 
             info!(
-                "{} Файл '{}' -> {} успешно скачан",
-                counter,
+                "{counter} Файл '{}' -> {} {extension} успешно скачан",
                 logo.url,
                 filename.display()
             );
