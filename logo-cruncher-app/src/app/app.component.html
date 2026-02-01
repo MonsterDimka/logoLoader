@@ -16,6 +16,12 @@
         <button type="submit">Greet</button>
     </form>
     <p>{{ greetingMessage }}</p>
+    <p>{{ fileList }}</p>
+    <ul>
+        @for (item of fileList; track $index) {
+            <li>{{ item }}</li>
+        }
+    </ul>
 
     <router-outlet/>
 </main>

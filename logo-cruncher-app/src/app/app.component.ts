@@ -12,6 +12,11 @@ import {open} from '@tauri-apps/plugin-dialog';
 export class AppComponent {
     greetingMessage = "";
     dirs = "";
+    fileList: string[];
+
+    constructor() {
+        this.fileList = ["None"];
+    }
 
     greet(event: SubmitEvent, name: string): void {
         event.preventDefault();
@@ -21,20 +26,34 @@ export class AppComponent {
         invoke<string>("greet", {name}).then(async (text) => {
             this.greetingMessage = text;
 
-            const file = await open({
-                multiple: false,
-                directory: true,
-            });
-
-            if (file) {
-                this.greetingMessage = this.greetingMessage + file;
-                this.dirs = file;
-            }
-            console.log(file);
+            await this.loadFileList();
+            // const file = await open({
+            //     multiple: false,
+            //     directory: true,
+            // });
+            //
+            // if (file) {
+            //     this.greetingMessage = this.greetingMessage + file;
+            //     this.dirs = file;
+            // }
+            // console.log(file);
         });
 
         invoke<string>("logo_list", {msg: this.dirs}).then(async (dirs) => {
             this.greetingMessage = dirs;
         });
+
+
+    }
+
+    // Пример вызова
+    async loadFileList() {
+        try {
+            const files: string[] = await invoke("get_file_list");
+            console.log("Список файлов:", files);
+            this.fileList = files;  // например, в свойство компонента
+        } catch (error) {
+            console.error("Ошибка:", error);
+        }
     }
 }
