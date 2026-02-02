@@ -9,6 +9,10 @@ fn greet(name: &str) -> String {
 
     format!("Hello, {}!Привет из раста!", name)
 }
+#[tauri::command]
+fn process_json(json: &str) {
+    println!("Привет из раста! {json}");
+}
 
 #[tauri::command]
 async fn get_file_list(app: tauri::AppHandle) -> Result<Vec<String>, String> {

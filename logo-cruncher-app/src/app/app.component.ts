@@ -2,11 +2,11 @@ import {Component} from "@angular/core";
 import {RouterOutlet} from "@angular/router";
 import {open} from '@tauri-apps/plugin-dialog';
 import {invoke, convertFileSrc} from "@tauri-apps/api/core";
-import {FormControl, FormGroup, ReactiveFormsModule} from '@angular/forms';
+import {FormsModule} from '@angular/forms';
 
 @Component({
     selector: "app-root",
-    imports: [RouterOutlet, ReactiveFormsModule],
+    imports: [FormsModule],
     templateUrl: "./app.component.html",
     styleUrl: "./app.component.css",
 })
@@ -15,16 +15,14 @@ export class AppComponent {
     dirs = "";
     fileList: string[] = [];
     imageUrls: string[] = [];
-    jsonJob: string = "";
+    jsonText: string = "";
 
-    feedbackForm = new FormGroup({
-        reason: new FormControl('Initial reason') // Form control with default value
-    });
-
-    onSubmit() {
-        console.log(this.feedbackForm.value.reason);
+    processJson() {
+        console.log("this.jsonText", this.jsonText);
+        invoke<string>("process_json", {json: this.jsonText}).then(async (text) => {
+            this.greetingMessage = "Обработка завершена";
+        });
     }
-
 
     greet(event: SubmitEvent, name: string): void {
         event.preventDefault();
@@ -55,7 +53,6 @@ export class AppComponent {
     }
 
     // Пример вызова
-
 
     isImageFile(path: string): boolean {
         return /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(path);
