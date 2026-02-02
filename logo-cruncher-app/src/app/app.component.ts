@@ -3,11 +3,10 @@ import {RouterOutlet} from "@angular/router";
 import {open} from '@tauri-apps/plugin-dialog';
 import {invoke, convertFileSrc} from "@tauri-apps/api/core";
 import {FormControl, FormGroup, ReactiveFormsModule} from '@angular/forms';
-import {ButtonModule} from "primeng/button";
 
 @Component({
     selector: "app-root",
-    imports: [RouterOutlet, ReactiveFormsModule, ButtonModule],
+    imports: [RouterOutlet, ReactiveFormsModule],
     templateUrl: "./app.component.html",
     styleUrl: "./app.component.css",
 })
