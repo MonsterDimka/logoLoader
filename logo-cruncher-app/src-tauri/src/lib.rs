@@ -1,17 +1,29 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use logoLoader::{Config, Jobs};
 use std::fs;
-use std::path::Path;
 use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     println!("Привет из раста!");
-
     format!("Hello, {}!Привет из раста!", name)
 }
 #[tauri::command]
-fn process_json(json: &str) {
-    println!("Привет из раста! {json}");
+fn process_json(json: &str) -> Jobs {
+    let config = Config::get();
+    let logos = Jobs::load_json_job(json, config.job(), &config.temp_job_file());
+    println!("Привет от Json из Rust! {json} {:?}", logos);
+
+    // format!(
+    //     "Обработка завершена: получено {} символов, заданий {}",
+    //     json.len(),
+    //     logos.logos.len()
+    // )
+    logos
+    // .logos
+    // .iter()
+    // .map(|x| format!("id: {} url: {}", x.id, x.url))
+    // .collect()
 }
 
 #[tauri::command]
@@ -49,7 +61,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, get_file_list])
+        .invoke_handler(tauri::generate_handler![greet, get_file_list, process_json])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

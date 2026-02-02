@@ -4,6 +4,15 @@ import {open} from '@tauri-apps/plugin-dialog';
 import {invoke, convertFileSrc} from "@tauri-apps/api/core";
 import {FormsModule} from '@angular/forms';
 
+type LogoJob = {
+    id: number;
+    url: string;
+};
+
+type Jobs = {
+    logos: LogoJob[];
+}
+
 @Component({
     selector: "app-root",
     imports: [FormsModule],
@@ -11,17 +20,21 @@ import {FormsModule} from '@angular/forms';
     styleUrl: "./app.component.css",
 })
 export class AppComponent {
-    greetingMessage = "";
+    greetingMessage = "Вставьте полный текст copy object из консоли разработчика";
     dirs = "";
     fileList: string[] = [];
     imageUrls: string[] = [];
     jsonText: string = "";
+    jobList: Jobs = {logos: []};
 
     processJson() {
         console.log("this.jsonText", this.jsonText);
-        invoke<string>("process_json", {json: this.jsonText}).then(async (text) => {
-            this.greetingMessage = "Обработка завершена";
+        invoke<Jobs>("process_json", {json: this.jsonText}).then(async (text: Jobs) => {
+            this.greetingMessage = "dfdfgdfgf";
+            this.jobList = text;
         });
+
+        // invoke<string>("process_json", {json: this.jsonText})
     }
 
     greet(event: SubmitEvent, name: string): void {

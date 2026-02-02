@@ -69,19 +69,22 @@ impl Jobs {
     }
 
     /// Загрузка задачи по созданию логотипов
-    pub async fn load_json_job(json_file_path: &str, temp_job_path: &PathBuf) -> Self {
+    pub fn load_json_job(json_text: &str, json_file_path: &str, temp_job_path: &PathBuf) -> Self {
         println!("Скачка файла {}", json_file_path);
         // Чтение файла с обработкой возможных ошибок
-        let json_content =
-            fs::read_to_string(json_file_path).expect("Ошибка чтения json файла задачи");
+        let json_content = if json_text.is_empty() {
+            fs::read_to_string(json_file_path).expect("Ошибка чтения json файла задачи")
+        } else {
+            json_text.to_string()
+        };
 
         let logos: Root =
             serde_json::from_str::<Root>(&json_content).expect("Ошибка парсинга json");
 
         let futures: Vec<_> = logos.data.data.iter().map(|x| x.get_job()).collect();
 
-        let results = join_all(futures).await;
-        let logos: Vec<LogoJob> = results
+        // let results = join_all(futures).await;
+        let logos: Vec<LogoJob> = futures
             .into_iter()
             .filter_map(Result::ok)
             .flatten()

@@ -55,17 +55,18 @@ pub struct DataItem {
 }
 impl DataItem {
     // Парсим json задания
-    pub async fn get_job(&self) -> Result<Option<LogoJob>, Box<dyn Error>> {
+    pub fn get_job(&self) -> Result<Option<LogoJob>, Box<dyn Error>> {
         // Сначала пытаемся извлечь данные из attachments
         if let UrlType::JSONJob(url) = UrlType::from_attachments(&self.attachments) {
             return Ok(Some(LogoJob::new(self.id, url)));
         }
 
-        // или из заметок
-        match UrlType::from_note(&self.note) {
-            Some(url_type) => url_type.process(self.id).await,
-            None => Ok(None),
-        }
+        Ok(None)
+        // // или из заметок
+        // match UrlType::from_note(&self.note) {
+        //     Some(url_type) => url_type.process(self.id).await,
+        //     None => Ok(None),
+        // }
     }
 }
 
@@ -242,7 +243,12 @@ impl UrlType {
         let meta_selectors = [
             (10, "meta[property='og:image']", "content", "og:image"),
             (9, "meta[name='twitter:image']", "content", "twitter:image"),
-            (8, "link[rel='apple-touch-icon']", "href", "apple-touch-icon"),
+            (
+                8,
+                "link[rel='apple-touch-icon']",
+                "href",
+                "apple-touch-icon",
+            ),
             (7, "link[rel='mask-icon']", "href", "mask-icon"),
             (6, "link[rel='fluid-icon']", "href", "fluid-icon"),
             (5, "link[rel='icon']", "href", "icon"),
@@ -270,7 +276,9 @@ impl UrlType {
                 if let Some(alt) = img.value().attr("alt") {
                     let alt_lower = alt.to_lowercase();
                     if alt_lower.contains("logo") || alt_lower.contains("логотип") {
-                        if let Some(src) = img.value().attr("src").and_then(|s| base_url.join(s).ok()) {
+                        if let Some(src) =
+                            img.value().attr("src").and_then(|s| base_url.join(s).ok())
+                        {
                             icons.push(IconInfo {
                                 url: src.to_string(),
                                 icon_type: "logo-alt".to_string(),
@@ -305,7 +313,10 @@ impl UrlType {
                 if let Some(src) = img.value().attr("src").and_then(|s| base_url.join(s).ok()) {
                     let src_str = src.to_string();
                     // Пропускаем явно не логотипы
-                    if !src_str.contains("banner") && !src_str.contains("ad") && !src_str.contains("1x1") {
+                    if !src_str.contains("banner")
+                        && !src_str.contains("ad")
+                        && !src_str.contains("1x1")
+                    {
                         icons.push(IconInfo {
                             url: src_str,
                             icon_type: "image".to_string(),
@@ -321,7 +332,12 @@ impl UrlType {
         select_best_icon(&icons)
             .map(|icon| LogoJob::new(id, icon.url.clone()))
             .map(Some)
-            .ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "Логотип не найден")) as Box<dyn Error>)
+            .ok_or_else(|| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Логотип не найден",
+                )) as Box<dyn Error>
+            })
     }
 
     async fn process_image_page(id: u32, url: &str) -> Result<Option<LogoJob>, Box<dyn Error>> {

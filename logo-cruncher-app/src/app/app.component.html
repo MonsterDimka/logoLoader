@@ -3,27 +3,51 @@
     <p>И ведь понимает, понимает же всё! Понимает, что поддельные духи — вонючая бурда, а не парфюмерия. Понимает, что
         Квасин и Касимцева — люди дела, а он — вечный нытик в «задрипанной химчистке».</p>
 
-    <div>
-        <form class="row" (submit)="greet($event, greetInput.value)">
-            <input #greetInput id="greet-input" placeholder="Enter a name..." class="input"/>
-            <button type="submit" class="btn">Greet</button>
-        </form>
-        <p>{{ greetingMessage }}</p>
+    <!--    <div>-->
+    <!--        <form class="row" (submit)="greet($event, greetInput.value)">-->
+    <!--            <input #greetInput id="greet-input" placeholder="Enter a name..." class="input"/>-->
+    <!--            <button type="submit" class="btn">Greet</button>-->
+    <!--        </form>-->
+    <!--        <p>{{ greetingMessage }}</p>-->
 
+    <!--    </div>-->
+
+    <!--    <div class="divider">OR</div>-->
+
+    <!--    <form>-->
+    <fieldset class="fieldset">
+        <legend class="fieldset-legend">Список&nbsp;заявок&nbsp;на&nbsp;логотипы</legend>
+        <textarea [(ngModel)]="jsonText"
+                  placeholder="Введите JSON список заявок на логотипы"
+                  class="textarea w-full" rows="5"></textarea>
+        <div class="label">{{ greetingMessage }}</div>
+    </fieldset>
+    <button (click)="processJson()" class="btn w-64 rounded-full">Обработать заявки</button>
+
+    <div class="overflow-x-auto">
+        <table class="table">
+            <!-- head -->
+            <thead>
+            <tr>
+                <th>id</th>
+                <th>Job</th>
+            </tr>
+            </thead>
+            <tbody>
+            <!-- row 1 -->
+                @for (job of jobList.logos; track job) {
+                    <tr>
+                        <th>{{ job.id }}</th>
+                        <td>{{ job.url }}</td>
+
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
+    Table with border and background
 
-    <div class="divider">OR</div>
-
-    <form>
-        <fieldset class="fieldset">
-            <legend class="fieldset-legend">Список&nbsp;заявок&nbsp;на&nbsp;логотипы</legend>
-            <textarea [(ngModel)]="jsonText" #jsonText
-                      placeholder="Введите JSON список заявок на логотипы"
-                      class="textarea w-full" rows="5"></textarea>
-            <div class="label">Вставьте полный текст copy object из консоли разработчика</div>
-        </fieldset>
-        <button (click)="processJson()" class="btn w-64 rounded-full">Обработать заявки</button>
-    </form>
+    <!--    </form>-->
 
 
     <div>
