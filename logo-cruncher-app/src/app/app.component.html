@@ -1,7 +1,9 @@
-<div class="w-screen h-screen p-10 prose prose-xl bg-accent-content/10">
+<div class="h-screen w-full max-w-full p-10 prose prose-xl bg-accent-content/10">
     <h1>Welcome to Tauri + Angular {{ angularVersion }}!</h1>
-    <p>И ведь понимает, понимает же всё! Понимает, что поддельные духи — вонючая бурда, а не парфюмерия. Понимает, что
-        Квасин и Касимцева — люди дела, а он — вечный нытик в «задрипанной химчистке».</p>
+    <p>A Tauri Event Service in Angular acts as a centralized service—typically using providedIn: 'root' and RxJS
+        BehaviorSubject or EventEmitter—to manage bidirectional communication between the Angular frontend and the Tauri
+        Rust backend. This enables frontend components to subscribe to native backend events (via listen) or emit data
+        to Rust (via emit). </p>
 
     <!--    <div>-->
     <!--        <form class="row" (submit)="greet($event, greetInput.value)">-->
@@ -16,55 +18,75 @@
 
     <!--    <form>-->
 
-    <div class="flex flex-row">
-        <div class="basis-64">01</div>
-        <div class="basis-64">02</div>
-        <div class="basis-128">03</div>
-    </div>
-    
-    <form (submit)="processJson($event, jsonInput.value)">
-        <fieldset class="fieldset">
-            <legend class="fieldset-legend">Список&nbsp;заявок&nbsp;на&nbsp;логотипы</legend>
-            <textarea #jsonInput id="json-input"
-                      placeholder="Введите JSON список заявок на логотипы"
-                      class="textarea w-full" rows="5"></textarea>
-            <div class="label">{{ greetingMessage }}</div>
-        </fieldset>
-        <button type="submit" class="btn w-64 rounded-full">Обработать заявки</button>
-    </form>
-    <button type="button" class="btn w-64 rounded-full" (click)="greet()">Greet</button>
+    <div class="flex flex-row gap-5">
+        <div class="basis-1/4">
+            <h4>Заявки</h4>
+            <form (submit)="processJson($event, jsonInput.value)">
+                <fieldset class="fieldset">
+                    <!--                    <legend class="fieldset-legend">Список&nbsp;заявок&nbsp;на&nbsp;логотипы</legend>-->
+                    <textarea #jsonInput id="json-input"
+                              placeholder="Введите JSON список заявок на логотипы"
+                              class="textarea textarea-xs w-full h-90  textarea-xs"></textarea>
+                    <div class="label">{{ greetingMessage }}</div>
+                </fieldset>
+                <div class="flex flex-row gap-5">
+                    <button type="submit" class="btn">Обработать заявки</button>
+                    <button type="button" class="btn" (click)="greet()">Тестовый привет!</button>
+                </div>
 
-    <div class="overflow-x-auto">
-        <table class="table">
-            <!-- head -->
-            <thead>
-            <tr>
-                <th>id</th>
-                <th>Job</th>
-            </tr>
-            </thead>
-            <tbody>
-            <!-- row 1 -->
+            </form>
+
+        </div>
+        <div class="basis-1/4 verflow-x-auto">
+            <h4>Задача</h4>
+            <div class="grid grid-cols-4 gap-0.5">
                 @for (job of logos; track job.id) {
-                    <tr>
-                        <th>{{ job.id }}</th>
-                        <td>{{ job.url }}</td>
-                    </tr>
+                    <div class="box-content size-16">
+                        <img
+                                [src]="job.url" width="100" height="100"
+                                alt="{{job.id}}" class="rounded-2xl"/>
+                        <!--                        <p class="text-xs">{{ job.id }}</p>-->
+                    </div>
                 }
-            </tbody>
-        </table>
-    </div>
-
-    <div>
-        <div class="grid grid-cols-4 gap-4">
-            <h3>Список картинок</h3>
-            <div>
-                @for (imageUrl of imageUrls; track imageUrl) {
-                    <img [src]="imageUrl" alt="" class="thumbnail" loading="lazy"
-                         (error)="$any($event.target).style.display='none'"/>
-                }
+            </div>
+            <!--            <table class="table table-xs">-->
+            <!--                &lt;!&ndash; head &ndash;&gt;-->
+            <!--                <thead>-->
+            <!--                <tr>-->
+            <!--                    <th>id</th>-->
+            <!--                    <th>Job</th>-->
+            <!--                    <th>Image</th>-->
+            <!--                </tr>-->
+            <!--                </thead>-->
+            <!--                <tbody>-->
+            <!--                &lt;!&ndash; row &ndash;&gt;-->
+            <!--                    @for (job of logos; track job.id) {-->
+            <!--                        <tr>-->
+            <!--                            <th>{{ job.id }}</th>-->
+            <!--                            <td>{{ job.url }}</td>-->
+            <!--                            <td>-->
+            <!--                                <div class="avatar">-->
+            <!--                                    <div class="mask mask-squircle h-12 w-12">-->
+            <!--                                        <img-->
+            <!--                                                [src]="job.url"-->
+            <!--                                                alt="Avatar Tailwind CSS Component"/>-->
+            <!--                                    </div>-->
+            <!--                                </div>-->
+            <!--                        </tr>-->
+            <!--                    }-->
+            <!--                </tbody>-->
+            <!--            </table>-->
+        </div>
+        <div class="basis-2/4">
+            <div class="grid grid-cols-4 gap-4">
+                <h4>Картинки</h4>
+                <div>
+                    @for (imageUrl of imageUrls; track imageUrl) {
+                        <img [src]="imageUrl" alt="" class="thumbnail" loading="lazy"
+                             (error)="$any($event.target).style.display='none'"/>
+                    }
+                </div>
             </div>
         </div>
     </div>
-
 </div>
