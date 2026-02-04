@@ -1,29 +1,26 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-use logoLoader::{Config, Jobs};
+use logoLoader::{test, Config, Jobs, LogoJob};
 use std::fs;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
-fn greet(name: &str) -> String {
-    println!("Привет из раста!");
-    format!("Hello, {}!Привет из раста!", name)
+fn greet(app: AppHandle, name: &str) -> String {
+    println!("Привет из раста! {}", name);
+    let res = format!("Hello, {}! Привет из раста!", name);
+    app.emit("event-greet-finished", &res).unwrap();
+    res
 }
 #[tauri::command]
+// fn process_json(json: &str) -> Result<Jobs, String> {
+// fn process_json(json: &str) -> Jobs {
 fn process_json(json: &str) -> Jobs {
     let config = Config::get();
-    let logos = Jobs::load_json_job(json, config.job(), &config.temp_job_file());
-    println!("Привет от Json из Rust! {json} {:?}", logos);
-
-    // format!(
-    //     "Обработка завершена: получено {} символов, заданий {}",
-    //     json.len(),
-    //     logos.logos.len()
-    // )
+    let logos = Jobs::load_json_job(json, config.job(), &config.temp_job_file(), false);
+    println!("Распарсили заданий {}", logos.logos.len());
+    // println!("Привет от Json из Rust2! {json} {:?}", logos);
+    let result = test(json);
+    println!("Привет от Json из Rust2 process_json! {result} dd");
     logos
-    // .logos
-    // .iter()
-    // .map(|x| format!("id: {} url: {}", x.id, x.url))
-    // .collect()
 }
 
 #[tauri::command]

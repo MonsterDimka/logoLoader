@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     println!("Скачка задания {}", job_path.to_str().unwrap());
-    let logos = Jobs::load_json_job("", config.job(), &config.temp_job_file());
+    let logos = Jobs::load_json_job("", config.job(), &config.temp_job_file(), true);
 
     if config.download() {
         download_images(&logos, &config).await;

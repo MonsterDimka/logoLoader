@@ -1,5 +1,5 @@
 <div class="w-screen h-screen p-10 prose prose-xl bg-accent-content/10">
-    <h1>Welcome to Tauri + Angular!</h1>
+    <h1>Welcome to Tauri + Angular {{ angularVersion }}!</h1>
     <p>И ведь понимает, понимает же всё! Понимает, что поддельные духи — вонючая бурда, а не парфюмерия. Понимает, что
         Квасин и Касимцева — люди дела, а он — вечный нытик в «задрипанной химчистке».</p>
 
@@ -15,14 +15,24 @@
     <!--    <div class="divider">OR</div>-->
 
     <!--    <form>-->
-    <fieldset class="fieldset">
-        <legend class="fieldset-legend">Список&nbsp;заявок&nbsp;на&nbsp;логотипы</legend>
-        <textarea [(ngModel)]="jsonText"
-                  placeholder="Введите JSON список заявок на логотипы"
-                  class="textarea w-full" rows="5"></textarea>
-        <div class="label">{{ greetingMessage }}</div>
-    </fieldset>
-    <button (click)="processJson()" class="btn w-64 rounded-full">Обработать заявки</button>
+
+    <div class="flex flex-row">
+        <div class="basis-64">01</div>
+        <div class="basis-64">02</div>
+        <div class="basis-128">03</div>
+    </div>
+    
+    <form (submit)="processJson($event, jsonInput.value)">
+        <fieldset class="fieldset">
+            <legend class="fieldset-legend">Список&nbsp;заявок&nbsp;на&nbsp;логотипы</legend>
+            <textarea #jsonInput id="json-input"
+                      placeholder="Введите JSON список заявок на логотипы"
+                      class="textarea w-full" rows="5"></textarea>
+            <div class="label">{{ greetingMessage }}</div>
+        </fieldset>
+        <button type="submit" class="btn w-64 rounded-full">Обработать заявки</button>
+    </form>
+    <button type="button" class="btn w-64 rounded-full" (click)="greet()">Greet</button>
 
     <div class="overflow-x-auto">
         <table class="table">
@@ -35,27 +45,22 @@
             </thead>
             <tbody>
             <!-- row 1 -->
-                @for (job of jobList.logos; track job) {
+                @for (job of logos; track job.id) {
                     <tr>
                         <th>{{ job.id }}</th>
                         <td>{{ job.url }}</td>
-
                     </tr>
                 }
             </tbody>
         </table>
     </div>
-    Table with border and background
-
-    <!--    </form>-->
-
 
     <div>
         <div class="grid grid-cols-4 gap-4">
             <h3>Список картинок</h3>
             <div>
-                @for (url of imageUrls; track url) {
-                    <img [src]="url" alt="" class="thumbnail" loading="lazy"
+                @for (imageUrl of imageUrls; track imageUrl) {
+                    <img [src]="imageUrl" alt="" class="thumbnail" loading="lazy"
                          (error)="$any($event.target).style.display='none'"/>
                 }
             </div>

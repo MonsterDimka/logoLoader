@@ -69,11 +69,16 @@ impl Jobs {
     }
 
     /// Загрузка задачи по созданию логотипов
-    pub fn load_json_job(json_text: &str, json_file_path: &str, temp_job_path: &PathBuf) -> Self {
+    pub fn load_json_job(
+        json_text: &str,
+        json_file_path: &str,
+        temp_job_path: &PathBuf,
+        backup: bool,
+    ) -> Self {
         println!("Скачка файла {}", json_file_path);
         // Чтение файла с обработкой возможных ошибок
         let json_content = if json_text.is_empty() {
-            fs::read_to_string(json_file_path).expect("Ошибка чтения json файла задачи")
+            fs::read_to_string(json_file_path).unwrap_or(json_text.to_string()) //.expect("Ошибка чтения json файла задачи")
         } else {
             json_text.to_string()
         };
@@ -95,7 +100,9 @@ impl Jobs {
         let jobs = Jobs { logos };
         // Сохранить задачу на всякий случай
 
-        jobs.jobs_backup(temp_job_path);
+        if backup {
+            jobs.jobs_backup(temp_job_path);
+        }
         jobs
     }
 
