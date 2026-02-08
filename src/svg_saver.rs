@@ -12,7 +12,7 @@ const MAX_VECTOR_LOGO_SIZE: usize = 100;
 const KILOBYTE: usize = 1024;
 const PNG_OPTIMIZE: u8 = 4;
 const WIDTH_HEIGHT: usize = 300;
-const LOGO_SCALE_FACTOR: f64 = 0.65;
+const LOGO_SCALE_FACTOR: f64 = 0.8; //0.65;
 
 const SVG_SHEME: &str = r#"<g id="none-copy-2646" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
     <g id="Group" opacity="0.2" stroke="Black">
@@ -165,7 +165,10 @@ impl LogoTransform {
     }
 }
 
-fn make_png_base64(image: &RgbaImage, optimize: bool) -> Result<String, Box<dyn Error + Send + Sync>> {
+fn make_png_base64(
+    image: &RgbaImage,
+    optimize: bool,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
     // Конвертируем изображение в PNG bytes
     let dimage = DynamicImage::ImageRgba8(image.clone());
     let mut png_bytes = Vec::new();

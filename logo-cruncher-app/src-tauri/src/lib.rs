@@ -1,7 +1,10 @@
+use commands::process_json;
 use logoLoader::{test, Config, Jobs, LogoJob};
 use std::fs;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
+
+mod commands;
 
 #[tauri::command]
 fn greet(app: AppHandle, name: &str) -> String {
@@ -9,18 +12,6 @@ fn greet(app: AppHandle, name: &str) -> String {
     let res = format!("Hello, {}! Привет из раста!", name);
     app.emit("event-greet-finished", &res).unwrap();
     res
-}
-#[tauri::command]
-// fn process_json(json: &str) -> Result<Jobs, String> {
-// fn process_json(json: &str) -> Jobs {
-fn process_json(json: &str) -> Jobs {
-    let config = Config::get();
-    let logos = Jobs::load_json_job(json, config.job(), &config.temp_job_file(), false);
-    println!("Распарсили заданий {}", logos.logos.len());
-    // println!("Привет от Json из Rust2! {json} {:?}", logos);
-    let result = test(json);
-    println!("Привет от Json из Rust2 process_json! {result} dd");
-    logos
 }
 
 #[tauri::command]
@@ -56,9 +47,15 @@ async fn get_file_list(app: tauri::AppHandle) -> Result<Vec<String>, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, get_file_list, process_json])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            get_file_list,
+            commands::process_json
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

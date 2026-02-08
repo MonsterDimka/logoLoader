@@ -2,7 +2,7 @@ use image::{imageops::FilterType, GenericImageView, RgbImage, Rgba, RgbaImage};
 use kmeans_colors::{get_kmeans, Sort};
 use log::info;
 use palette::cast::from_component_slice;
-use palette::{IntoColor, Lab, Srgb};
+use palette::{IntoColor, Lab, Srgb, Srgba};
 use std::error::Error;
 #[derive(Debug)]
 pub struct DominantColor {
@@ -13,6 +13,14 @@ pub struct DominantColor {
 }
 
 impl DominantColor {
+    pub fn white() -> Self {
+        DominantColor {
+            color: Srgb::new(255, 255, 255),
+            score: 1.0,
+            average: 255,
+            k: 6,
+        }
+    }
     pub fn remove_image_background(&self, big_rgba_image: &mut RgbaImage) {
         const TOLERANCE: u8 = 30;
         let (r, g, b) = (self.color.red, self.color.green, self.color.blue);
@@ -32,26 +40,13 @@ impl DominantColor {
     }
 
     /// Вычисление доминирующего цвета
-    pub fn from_rgb_image(
+    pub fn from_rgba_image(
         rgb_img: RgbImage,
     ) -> Result<DominantColor, Box<dyn Error + Send + Sync>> {
-        const MAX_SIDE: u32 = 300;
-
-        // Уменьшаем изображение для ускорения и устойчивости k-means
         let (w, h) = rgb_img.dimensions();
-        let small_img = if w.max(h) > MAX_SIDE {
-            let (nw, nh) = if w >= h {
-                (MAX_SIDE, (h * MAX_SIDE / w).max(1))
-            } else {
-                ((w * MAX_SIDE / h).max(1), MAX_SIDE)
-            };
-            image::imageops::resize(&rgb_img, nw, nh, FilterType::Triangle)
-        } else {
-            rgb_img
-        };
 
         // Конвертация в Lab для лучшей кластеризации
-        let lab_pixels: Vec<Lab> = from_component_slice::<Srgb<u8>>(&small_img)
+        let lab_pixels: Vec<Lab> = from_component_slice::<Srgb<u8>>(&rgb_img)
             .iter()
             .map(|&srgb| srgb.into_linear().into_color())
             .collect();

@@ -116,6 +116,7 @@ pub async fn images_works_parallel(
                 &download_folder,
                 &upscale_folder,
                 &result_folder,
+                false,
             )
             .await;
             bar_clone.inc(1);
@@ -142,40 +143,53 @@ pub async fn images_works_parallel(
     Ok(())
 }
 
+fn has_alpha_channel(img: &DynamicImage) -> bool {
+    matches!(
+        img,
+        DynamicImage::ImageRgba8(_) | DynamicImage::ImageRgba16(_) | DynamicImage::ImageRgba32F(_)
+    )
+}
+
 async fn process_single_logo(
     logo: LogoJob,
     task: i32,
     download_folder: &Path,
     upscale_folder: &Path,
     result_folder: &Path,
+    white_bg_replace_gray: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let id = logo.id;
 
-    let small_image_name = download_folder.join(format!("{}.jpg", id));
-    let big_image_name = upscale_folder.join(format!("{}.png", id));
+    // Закачиваем обе версии картинки увеличенную и мелкую
+    let small_image_name = download_folder.join(format!("{}", id));
+    let big_image_name = upscale_folder.join(format!("{}", id));
+
+    // Загружаем изображения
+    let small_image = load_image(&small_image_name)?;
+    let has_alpha = has_alpha_channel(&small_image);
+    let mut final_image = load_image(&big_image_name)?.to_rgba8();
 
     info!(
-        "{} Таска обработки начата. Задача:{} Файлы для обработки: {} {}",
-        task,
-        id,
+        "Таска {task} обработки начата. Задача:{id} Файлы для обработки: {} {}",
         small_image_name.display(),
         big_image_name.display()
     );
 
-    // Загружаем изображения
-    let small_rgb_image = load_image(&small_image_name)?.to_rgb8();
-    // Получение доминирующего в изображении цвета (цвета фона)
-    let background = DominantColor::from_rgb_image(small_rgb_image)?;
-    let mut final_image = load_image(&big_image_name)?.to_rgba8();
-
-    // Удаление фона
-    if background.score > MIN_SCORE_DOMINANT_COLOR {
-        background.remove_image_background(&mut final_image);
-        final_image = trim_transparent_border(&mut final_image);
-    }
+    // Получение доминирующего в изображении цвета (цвета фона) если картинка прозрачная то цвет фона белый
+    let background = if !has_alpha {
+        // Удаление фона
+        let background = DominantColor::from_rgba_image(small_image.to_rgb8())?;
+        if background.score > MIN_SCORE_DOMINANT_COLOR {
+            background.remove_image_background(&mut final_image);
+            final_image = trim_transparent_border(&mut final_image);
+        }
+        background
+    } else {
+        DominantColor::white()
+    };
 
     // Выбор цвета фона серый для белого фона и доминантный для остальных
-    let background = if background.average > WHITE_COLOR {
+    let background = if white_bg_replace_gray && background.average > WHITE_COLOR {
         DominantColor {
             color: GRAY_BACKGROUND_COLOR,
             ..background
@@ -254,7 +268,7 @@ fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + 
         .with_guessed_format()?
         .decode()?;
 
-    let image = flatten_alpha_channel(image);
+    // let image = flatten_alpha_channel(image);
     let (width, height) = image.dimensions();
 
     info!(
@@ -266,29 +280,29 @@ fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + 
     Ok(image)
 }
 
-fn flatten_alpha_channel(image: DynamicImage) -> DynamicImage {
-    match image {
-        DynamicImage::ImageRgba8(rgba_image) => {
-            // Конвертируем RGBA в RGB с белым фоном
-            let (width, height) = rgba_image.dimensions();
-            let mut rgb_image = ImageBuffer::new(width, height);
-
-            for (x, y, pixel) in rgba_image.enumerate_pixels() {
-                let Rgba([r, g, b, a]) = pixel;
-                if *a == 255 {
-                    // Полностью непрозрачный - просто копируем RGB
-                    rgb_image.put_pixel(x, y, Rgb([*r, *g, *b]));
-                } else {
-                    rgb_image.put_pixel(x, y, Rgb([255, 255, 255]));
-                }
-            }
-            DynamicImage::ImageRgb8(rgb_image)
-        }
-
-        // Для остальных типов изображений (RGB, Gray, etc.) оставляем как есть
-        _ => image,
-    }
-}
+// fn flatten_alpha_channel(image: DynamicImage) -> DynamicImage {
+//     match image {
+//         DynamicImage::ImageRgba8(rgba_image) => {
+//             // Конвертируем RGBA в RGB с белым фоном
+//             let (width, height) = rgba_image.dimensions();
+//             let mut rgb_image = ImageBuffer::new(width, height);
+//
+//             for (x, y, pixel) in rgba_image.enumerate_pixels() {
+//                 let Rgba([r, g, b, a]) = pixel;
+//                 if *a == 255 {
+//                     // Полностью непрозрачный - просто копируем RGB
+//                     rgb_image.put_pixel(x, y, Rgb([*r, *g, *b]));
+//                 } else {
+//                     rgb_image.put_pixel(x, y, Rgb([255, 255, 255]));
+//                 }
+//             }
+//             DynamicImage::ImageRgb8(rgb_image)
+//         }
+//
+//         // Для остальных типов изображений (RGB, Gray, etc.) оставляем как есть
+//         _ => image,
+//     }
+// }
 
 pub async fn upscale_images(config: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Usage: upscayl-bin -i infile -o outfile [options]...

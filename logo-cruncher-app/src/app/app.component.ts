@@ -2,6 +2,7 @@ import {Component, OnInit, OnDestroy, VERSION} from "@angular/core";
 import {invoke, convertFileSrc} from "@tauri-apps/api/core";
 import {FormsModule, ReactiveFormsModule} from '@angular/forms';
 import {listen, UnlistenFn} from '@tauri-apps/api/event';
+import {load, Store} from '@tauri-apps/plugin-store';
 
 interface LogoJob {
     id: number;
@@ -14,9 +15,6 @@ interface Jobs {
 
 export interface Root {
     data: Data;
-    // status: number;
-    // config: Config;
-    // statusText: string;
 }
 
 export interface Data {
@@ -26,24 +24,13 @@ export interface Data {
 
 export interface DataItem {
     id: number;
-    // created: number;
-    // updated: number;
-    // username: string;
-    // merchantId: number;
     note: string;
-    // status: string;
-    // priority: string;
-    // logo: null;
-    // logoAttachment: null;
     attachments: Attachment[];
-    // merchant: Merchant;
-    // $$hashKey: string;
 }
 
 export interface Attachment {
     id: number;
     url: string;
-    // $$hashKey: string;
 }
 
 @Component({
@@ -61,9 +48,10 @@ export class AppComponent implements OnInit, OnDestroy {
     logos: LogoJob[] = [{id: 34293493, url: "Url 1"}, {id: 342233, url: "Url 2"}];
     angularVersion = VERSION.full;
     subscription: Promise<UnlistenFn> | undefined;
+    store: Store | undefined;
 
-
-    ngOnInit() {
+    async ngOnInit() {
+        this.store = await load('store.json');
         this.subscription = listen<String>('event-greet-finished', (event) => {
             console.log(
                 `Emmit ${event.payload} ${event}`
@@ -76,10 +64,13 @@ export class AppComponent implements OnInit, OnDestroy {
             const unlisten = await this.subscription;
             unlisten();
         }
+        await this.store?.save();
     }
 
-    processJson(event: SubmitEvent, jsonString: string) {
+    async processJson(event: SubmitEvent, jsonString: string) {
         event.preventDefault();
+
+        await this.store?.set('some-key', {value: 5});
 
         console.log("Получен текст:", jsonString);
         try {
