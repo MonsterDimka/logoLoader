@@ -1,95 +1,85 @@
 use crate::config::Config;
 use crate::job_loaders::{Jobs, LogoJob};
-use log::info;
+use futures::stream::{self, StreamExt};
+use log::{error, info};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
-async fn detect_image_extension(
-    client: &reqwest::Client,
-    logo: &LogoJob,
-    download_folder: &Path,
-    rework_folder: &Path,
-) -> (String, PathBuf) {
-    let extension = match client.head(&logo.url).send().await {
-        Ok(response) => {
-            if let Some(content_type) = response.headers().get("content-type") {
-                match content_type.to_str().unwrap_or("") {
-                    "image/jpeg" => "jpg",
-                    "image/jpg" => "jpg",
-                    "image/png" => "png",
-                    "image/gif" => "gif",
-                    "image/webp" => "webp",
-                    "image/svg+xml" => "svg",
-                    _ => "none",
-                }
-            } else {
-                "none"
-            }
-        }
-        Err(_) => "none",
-    };
-
-    let name = format!("{}.{}", logo.id, extension);
-    let filename = match extension {
-        "svg" | "none" => rework_folder.join(&name),
-        _ => download_folder.join(&name),
-    };
-
-    (extension.to_string(), filename)
-}
+const DOWNLOAD_CONCURRENCY: usize = 16;
 
 // Скачать все изображения с сервера
-pub async fn download_images(job: &Jobs, config: &Config) {
+pub async fn download_images(
+    job: &Jobs,
+    config: &Config,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let client = reqwest::Client::new();
-    let mut tasks = Vec::new();
-    let mut counter = 0;
     let download_folder = config.download_folder();
     let rework_folder = config.rework_svg_folder();
 
-    for logo in &job.logos {
-        let client = client.clone();
-        let download_folder = download_folder.clone();
-        let rework_folder = rework_folder.clone();
-        let logo = logo.clone();
+    let results: Vec<Result<(), Box<dyn Error + Send + Sync>>> =
+        stream::iter(job.logos.iter().cloned().enumerate())
+            .map(|(idx, logo)| {
+                let client = client.clone();
+                let download_folder = download_folder.clone();
+                let rework_folder = rework_folder.clone();
+                async move {
+                    download_single_logo(&client, idx, &logo, &download_folder, &rework_folder)
+                        .await
+                }
+            })
+            .buffer_unordered(DOWNLOAD_CONCURRENCY)
+            .collect()
+            .await;
 
-        tasks.push(tokio::spawn(async move {
-            let (extension, filename) =
-                detect_image_extension(&client, &logo, &download_folder, &rework_folder).await;
-            get_image_by_job(&logo.url, &filename).await;
-
-            info!(
-                "{counter} Файл '{}' -> {} {extension} успешно скачан",
-                logo.url,
-                filename.display()
-            );
-        }));
-        counter += 1;
+    // Прерываемся на первой ошибке (можно поменять на накопление/summary при желании)
+    for r in results {
+        r?;
     }
-
-    for task in tasks {
-        let _ = task.await;
-    }
+    Ok(())
 }
 
-async fn get_image_by_job(
-    url: &str,
-    out: &std::path::Path,
+async fn download_single_logo(
+    client: &reqwest::Client,
+    idx: usize,
+    logo: &LogoJob,
+    download_folder: &Path,
+    rework_folder: &Path,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let client_new = reqwest::Client::new();
-    let response = client_new.get(url).send().await?;
+    let response = client.get(&logo.url).send().await?;
 
     if response.status().is_success() {
+        let is_svg = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|ct| ct.starts_with("image/svg+xml"))
+            || logo.url.to_lowercase().contains(".svg");
+
+        // Контракт хранения:
+        // - растровые: download_folder/<id> (без расширения)
+        // - svg: rework_folder/<id>.svg
+        let out_path: PathBuf = if is_svg {
+            rework_folder.join(format!("{}.svg", logo.id))
+        } else {
+            download_folder.join(logo.id.to_string())
+        };
+
         let bytes = response.bytes().await?;
-        let mut file = File::create(out).await?;
+        let mut file = File::create(&out_path).await?;
         file.write_all(&bytes).await?;
-    } else {
-        println!(
-            "Ошибка загрузки '{}'. Код статуса: {}",
-            url,
-            response.status()
+
+        info!(
+            "{idx} Файл '{}' -> {} успешно скачан",
+            logo.url,
+            out_path.display()
         );
+    } else {
+        let status = response.status();
+        let msg = format!("Ошибка загрузки '{}'. Код статуса: {}", logo.url, status);
+        error!("{msg}");
+        return Err(msg.into());
     }
 
     Ok(())

@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::job_loaders::{Jobs, LogoJob};
 use crate::svg_saver::save_ready_logo;
 
-use futures::future::join_all;
+use futures::stream::{self, StreamExt};
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageReader, Rgb, Rgba};
 use indicatif::ProgressBar;
 use log::{error, info};
@@ -15,41 +15,52 @@ use std::process::Command;
 const WHITE_COLOR: u8 = 250;
 const MIN_SCORE_DOMINANT_COLOR: f32 = 0.5;
 const GRAY_BACKGROUND_COLOR: Srgb<u8> = Srgb::new(238, 237, 241);
+const PROCESS_CONCURRENCY: usize = 16;
+
+async fn process_logos_concurrently<F, Fut>(
+    logos: &[LogoJob],
+    bar: ProgressBar,
+    f: F,
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    F: Fn(LogoJob) -> Fut + Copy + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<(), Box<dyn Error + Send + Sync>>> + Send,
+{
+    let results: Vec<Result<(), Box<dyn Error + Send + Sync>>> =
+        stream::iter(logos.iter().cloned())
+            .map(|logo| async {
+                let r = f(logo).await;
+                bar.inc(1);
+                r
+            })
+            .buffer_unordered(PROCESS_CONCURRENCY)
+            .collect()
+            .await;
+
+    for r in results {
+        r?;
+    }
+    Ok(())
+}
+
 pub async fn remove_border_parallel(
     jobs: &Jobs,
     config: &Config,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let bar = ProgressBar::new(jobs.logos.len() as u64);
-    let mut tasks = Vec::new();
     let download_folder = config.download_folder();
     let crop_folder = config.crop_folder();
     let upscale_folder = config.upscale_folder();
     println!("Обработка бордюров");
 
-    for logo in jobs.logos.clone() {
-        let bar_clone = bar.clone();
+    process_logos_concurrently(&jobs.logos, bar.clone(), |logo| {
         let download_folder = download_folder.clone();
         let crop_folder = crop_folder.clone();
         let upscale_folder = upscale_folder.clone();
-        tasks.push(tokio::spawn(async move {
-            let result =
-                remove_border(&logo, &download_folder, &crop_folder, &upscale_folder).await;
-            bar_clone.inc(1);
-            result
-        }));
-    }
+        async move { remove_border(&logo, &download_folder, &crop_folder, &upscale_folder).await }
+    })
+    .await?;
 
-    // Ждем завершения всех задач
-    let results = join_all(tasks).await;
-
-    // Проверяем результаты
-    for result in results {
-        match result {
-            Ok(Ok(_)) => continue,
-            Ok(Err(e)) => return Err(e),
-            Err(e) => return Err(Box::new(e)),
-        }
-    }
     bar.finish_with_message("Обработка краев завершена");
     info!("Обработка краев завершена");
     Ok(())
@@ -95,46 +106,46 @@ pub async fn images_works_parallel(
     config: &Config,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let bar = ProgressBar::new(jobs.logos.len() as u64);
-
-    let mut tasks = Vec::new();
-    let mut task_id = 0;
     let download_folder = config.download_folder();
     let upscale_folder = config.upscale_folder();
     let result_folder = config.result_folder();
     println!("Векторизация");
 
-    for logo in jobs.logos.clone() {
-        let bar_clone = bar.clone();
-        let download_folder = download_folder.clone();
-        let upscale_folder = upscale_folder.clone();
-        let result_folder = result_folder.clone();
+    let logos: Vec<(i32, LogoJob)> = jobs
+        .logos
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, logo)| (i as i32, logo))
+        .collect();
 
-        tasks.push(tokio::spawn(async move {
-            let result = process_single_logo(
-                logo,
-                task_id,
-                &download_folder,
-                &upscale_folder,
-                &result_folder,
-                false,
-            )
+    let results: Vec<Result<(), Box<dyn Error + Send + Sync>>> =
+        stream::iter(logos.into_iter())
+            .map(|(task_id, logo)| {
+                let download_folder = download_folder.clone();
+                let upscale_folder = upscale_folder.clone();
+                let result_folder = result_folder.clone();
+                let bar = bar.clone();
+                async move {
+                    let r = process_single_logo(
+                        logo,
+                        task_id,
+                        &download_folder,
+                        &upscale_folder,
+                        &result_folder,
+                        false,
+                    )
+                    .await;
+                    bar.inc(1);
+                    r
+                }
+            })
+            .buffer_unordered(PROCESS_CONCURRENCY)
+            .collect()
             .await;
-            bar_clone.inc(1);
-            result
-        }));
-        task_id += 1;
-    }
 
-    // Ждем завершения всех задач
-    let results = join_all(tasks).await;
-
-    // Проверяем результаты
-    for result in results {
-        match result {
-            Ok(Ok(_)) => continue,
-            Ok(Err(e)) => return Err(e),
-            Err(e) => return Err(Box::new(e)),
-        }
+    for r in results {
+        r?;
     }
 
     info!("Векторизация завершена");
@@ -214,10 +225,7 @@ async fn process_single_logo(
     );
 
     // Создание SVG
-    let image_path_str = new_image_name
-        .to_str()
-        .ok_or("Неверный путь для сохранения SVG")?;
-    save_ready_logo(final_image, id, background, image_path_str, true)?;
+    save_ready_logo(final_image, id, background, &new_image_name, true)?;
 
     info!(
         "{} Таска закончена. Задача:{} Файлы для обработки: {} {} Сохранение {}",

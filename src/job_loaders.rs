@@ -1,4 +1,3 @@
-use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,40 +23,43 @@ pub struct Jobs {
 
 impl Jobs {
     /// Загрузка задачи по созданию логотипов
-    pub fn load_database_json_job(json_file_path: &str) -> Jobs {
-        let json_content = fs::read_to_string(json_file_path).expect("Ошибка чтения json файла");
-        let logos: Vec<LogoJob> =
-            serde_json::from_str(&json_content).expect("Ошибка парсинга json");
+    pub fn load_database_json_job(
+        json_file_path: &str,
+    ) -> Result<Jobs, Box<dyn std::error::Error + Send + Sync>> {
+        let json_content = fs::read_to_string(json_file_path)?;
+        let logos: Vec<LogoJob> = serde_json::from_str(&json_content)?;
         println!("Загружено заданий: {}", logos.len());
-        Jobs { logos }
+        Ok(Jobs { logos })
     }
 
     /// Создание задачи по обработке логотипов на основе изображений из директории
-    pub fn generate_job_from_dir_images(dir_path: &str) -> Jobs {
+    pub fn generate_job_from_dir_images(
+        dir_path: &str,
+    ) -> Result<Jobs, Box<dyn std::error::Error + Send + Sync>> {
         const EMPTY_URL: &str = "None url";
         let path = Path::new(dir_path);
 
         if !path.exists() || !path.is_dir() {
-            panic!("Директории {dir_path} для генерации задания не существует");
+            return Err(format!("Директории {dir_path} для генерации задания не существует").into());
         }
         let image_extensions = ["jpg", "jpeg", "png", "gif", "webp"];
 
-        let logos: Vec<LogoJob> = fs::read_dir(path)
-            .expect("Ошибка чтения директории job")
+        let logos: Vec<LogoJob> = fs::read_dir(path)?
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.path().is_file())
             .filter(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(|ext| image_extensions.contains(&ext.to_lowercase().as_str()))
-                    .unwrap_or(false)
+                // Поддерживаем оба варианта:
+                // - файлы с расширением (png/jpg/...)
+                // - файлы без расширения (контракт скачивания: download_folder/<id>)
+                match entry.path().extension().and_then(|ext| ext.to_str()) {
+                    Some(ext) => image_extensions.contains(&ext.to_lowercase().as_str()),
+                    None => true,
+                }
             })
             .filter_map(|entry| {
-                entry
-                    .path()
-                    .file_stem()
+                let p = entry.path();
+                // Если расширения нет, file_stem() вернёт имя файла целиком.
+                p.file_stem()
                     .and_then(|stem| stem.to_str())
                     .and_then(|stem| stem.parse::<u32>().ok())
                     .map(|id| LogoJob::new(id, EMPTY_URL.to_string()))
@@ -65,7 +67,7 @@ impl Jobs {
             .collect();
 
         println!("Создано заданий: {}", logos.len());
-        Jobs { logos }
+        Ok(Jobs { logos })
     }
 
     /// Загрузка задачи по созданию логотипов
@@ -74,24 +76,21 @@ impl Jobs {
         json_file_path: &str,
         temp_job_path: &PathBuf,
         backup: bool,
-    ) -> Self {
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         println!("Скачка файла {}", json_file_path);
-        // Чтение файла с обработкой возможных ошибок
         let json_content = if json_text.is_empty() {
-            fs::read_to_string(json_file_path).unwrap_or(json_text.to_string()) //.expect("Ошибка чтения json файла задачи")
+            fs::read_to_string(json_file_path)?
         } else {
             json_text.to_string()
         };
 
-        let logos: Root =
-            serde_json::from_str::<Root>(&json_content).expect("Ошибка парсинга json");
+        let root: Root = serde_json::from_str::<Root>(&json_content)?;
 
-        let futures: Vec<_> = logos.data.data.iter().map(|x| x.get_job()).collect();
-
-        // let results = join_all(futures).await;
-        let logos: Vec<LogoJob> = futures
-            .into_iter()
-            .filter_map(Result::ok)
+        let logos: Vec<LogoJob> = root
+            .data
+            .data
+            .iter()
+            .filter_map(|x| x.get_job().ok())
             .flatten()
             .collect();
 
@@ -101,15 +100,15 @@ impl Jobs {
         // Сохранить задачу на всякий случай
 
         if backup {
-            jobs.jobs_backup(temp_job_path);
+            jobs.jobs_backup(temp_job_path)?;
         }
-        jobs
+        Ok(jobs)
     }
 
     /// Сохраняет список заданий в JSON по указанному пути (резервная копия).
-    fn jobs_backup(&self, path: &Path) {
-        let json = serde_json::to_string_pretty(&self.logos)
-            .expect("Невозможно создать запасной json задания");
-        fs::write(path, json).expect("Ошибка сохранения запасного json задания");
+    fn jobs_backup(&self, path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let json = serde_json::to_string_pretty(&self.logos)?;
+        fs::write(path, json)?;
+        Ok(())
     }
 }

@@ -8,24 +8,23 @@ use std::path::Path;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = Config::get();
-    let job_path = Path::new(config.job());
 
     println!("Инициализация лога");
-    setup_logger(&config.log_file());
+    setup_logger(&config.log_file())?;
 
     // let logos = loaders::simple_load_job(JSON_FILE_PATH)?;
     for folder in config.all_folders() {
         create_dir(&folder)?;
     }
 
-    println!("Скачка задания {}", job_path.to_str().unwrap());
-    let logos = Jobs::load_json_job("", config.job(), &config.temp_job_file(), true);
+    println!("Скачка задания {}", Path::new(config.job()).display());
+    let logos = Jobs::load_json_job("", config.job(), &config.temp_job_file(), true)?;
 
     if config.download() {
-        download_images(&logos, &config).await;
+        download_images(&logos, &config).await?;
     }
 
-    let logos = Jobs::generate_job_from_dir_images(config.download_folder().to_str().unwrap());
+    let logos = Jobs::generate_job_from_dir_images(&config.download_folder().display().to_string())?;
 
     remove_border_parallel(&logos, &config).await?;
 

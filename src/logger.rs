@@ -1,4 +1,6 @@
-pub fn setup_logger(log_file: &std::path::Path) {
+pub fn setup_logger(
+    log_file: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -10,10 +12,8 @@ pub fn setup_logger(log_file: &std::path::Path) {
             ))
         })
         .level(log::LevelFilter::Info)
-        .chain(
-            fern::log_file(log_file)
-                .unwrap_or_else(|e| panic!("Failed to create log file at {:?}: {}", log_file, e)),
-        )
-        .apply()
-        .unwrap_or_else(|e| panic!("Failed to apply logger configuration: {}", e));
+        .chain(fern::log_file(log_file)?)
+        .apply()?;
+
+    Ok(())
 }

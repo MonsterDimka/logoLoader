@@ -31,7 +31,7 @@ pub fn save_ready_logo(
     image: RgbaImage,
     job_id: u32,
     background_color: DominantColor,
-    image_file_name: &str,
+    output_path: &Path,
     optimize: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let base64_png_logo = make_png_base64(&image, optimize)?;
@@ -40,14 +40,16 @@ pub fn save_ready_logo(
         vector_svg_logo.len() / KILOBYTE < MAX_VECTOR_LOGO_SIZE && background_color.score > 0.5;
     if should_use_vector {
         info!(
-            "Для {image_file_name} PNG {} SVG {} score {} выбран SVG {should_use_vector}",
+            "Для {} PNG {} SVG {} score {} выбран SVG {should_use_vector}",
+            output_path.display(),
             base64_png_logo.len(),
             vector_svg_logo.len(),
             background_color.score
         )
     } else {
         info!(
-            "Для {image_file_name} PNG {} SVG {}  score {} выбран PNG {should_use_vector}",
+            "Для {} PNG {} SVG {}  score {} выбран PNG {should_use_vector}",
+            output_path.display(),
             base64_png_logo.len(),
             vector_svg_logo.len(),
             background_color.score
@@ -71,7 +73,7 @@ pub fn save_ready_logo(
         let transform = if background_color.score < 0.5 {
             LogoTransform::full_size()
         } else {
-            LogoTransform::calculate_png_transform(&image, image_file_name)
+            LogoTransform::calculate_png_transform(&image, &output_path.display().to_string())
             // (LOGO_SCALE_FACTOR, offset_x, offset_y)
         };
         format!(
@@ -103,8 +105,7 @@ pub fn save_ready_logo(
     );
 
     // Сохраняем файл
-    let output_path = Path::new(&image_file_name);
-    info!("Сохраняем файл {}", output_path.to_str().unwrap());
+    info!("Сохраняем файл {}", output_path.display());
     std::fs::write(output_path, svg_file)?;
 
     Ok(())
