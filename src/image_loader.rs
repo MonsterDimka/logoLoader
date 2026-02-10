@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::job_loaders::{Jobs, LogoJob};
 use futures::stream::{self, StreamExt};
+use image::ImageFormat;
 use log::{error, info};
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -34,8 +35,8 @@ pub async fn download_images(
             .await;
 
     // Прерываемся на первой ошибке (можно поменять на накопление/summary при желании)
-    for r in results {
-        r?;
+    for result in results {
+        result?;
     }
     Ok(())
 }
@@ -63,12 +64,23 @@ async fn download_single_logo(
         let out_path: PathBuf = if is_svg {
             rework_folder.join(format!("{}.svg", logo.id))
         } else {
-            download_folder.join(logo.id.to_string())
+            download_folder.join(format!("{}.png", logo.id)) // Теперь с расширением .png
         };
 
         let bytes = response.bytes().await?;
-        let mut file = File::create(&out_path).await?;
-        file.write_all(&bytes).await?;
+
+        if is_svg {
+            // Для SVG просто сохраняем как есть
+            let mut file = File::create(&out_path).await?;
+            file.write_all(&bytes).await?;
+        } else {
+            // Для растровых изображений конвертируем в PNG
+            let img = image::load_from_memory(&bytes)
+                .map_err(|e| format!("Ошибка загрузки изображения: {}", e))?;
+            // Сохраняем в PNG
+            img.save_with_format(&out_path, ImageFormat::Png)
+                .map_err(|e| format!("Ошибка сохранения PNG: {}", e))?;
+        }
 
         info!(
             "{idx} Файл '{}' -> {} успешно скачан",

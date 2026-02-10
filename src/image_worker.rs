@@ -23,7 +23,7 @@ async fn process_logos_concurrently<F, Fut>(
     f: F,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
-    F: Fn(LogoJob) -> Fut + Copy + Send + Sync + 'static,
+    F: Fn(LogoJob) -> Fut + Copy + Send + Sync,
     Fut: std::future::Future<Output = Result<(), Box<dyn Error + Send + Sync>>> + Send,
 {
     let results: Vec<Result<(), Box<dyn Error + Send + Sync>>> =
@@ -119,30 +119,29 @@ pub async fn images_works_parallel(
         .map(|(i, logo)| (i as i32, logo))
         .collect();
 
-    let results: Vec<Result<(), Box<dyn Error + Send + Sync>>> =
-        stream::iter(logos.into_iter())
-            .map(|(task_id, logo)| {
-                let download_folder = download_folder.clone();
-                let upscale_folder = upscale_folder.clone();
-                let result_folder = result_folder.clone();
-                let bar = bar.clone();
-                async move {
-                    let r = process_single_logo(
-                        logo,
-                        task_id,
-                        &download_folder,
-                        &upscale_folder,
-                        &result_folder,
-                        false,
-                    )
-                    .await;
-                    bar.inc(1);
-                    r
-                }
-            })
-            .buffer_unordered(PROCESS_CONCURRENCY)
-            .collect()
-            .await;
+    let results: Vec<Result<(), Box<dyn Error + Send + Sync>>> = stream::iter(logos.into_iter())
+        .map(|(task_id, logo)| {
+            let download_folder = download_folder.clone();
+            let upscale_folder = upscale_folder.clone();
+            let result_folder = result_folder.clone();
+            let bar = bar.clone();
+            async move {
+                let r = process_single_logo(
+                    logo,
+                    task_id,
+                    &download_folder,
+                    &upscale_folder,
+                    &result_folder,
+                    false,
+                )
+                .await;
+                bar.inc(1);
+                r
+            }
+        })
+        .buffer_unordered(PROCESS_CONCURRENCY)
+        .collect()
+        .await;
 
     for r in results {
         r?;

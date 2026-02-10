@@ -1,4 +1,4 @@
-use image::{imageops::FilterType, GenericImageView, RgbImage, Rgba, RgbaImage};
+use image::{GenericImageView, RgbImage, Rgba, RgbaImage};
 use kmeans_colors::{get_kmeans, Sort};
 use log::info;
 use palette::cast::from_component_slice;
@@ -43,8 +43,6 @@ impl DominantColor {
     pub fn from_rgba_image(
         rgb_img: RgbImage,
     ) -> Result<DominantColor, Box<dyn Error + Send + Sync>> {
-        let (w, h) = rgb_img.dimensions();
-
         // Конвертация в Lab для лучшей кластеризации
         let lab_pixels: Vec<Lab> = from_component_slice::<Srgb<u8>>(&rgb_img)
             .iter()
