@@ -5,6 +5,7 @@ use base64::Engine;
 use image::{DynamicImage, RgbaImage};
 use log::info;
 use oxipng::{optimize_from_memory, Options};
+use regex::Regex;
 use std::error::Error;
 use std::path::Path;
 
@@ -27,6 +28,11 @@ const SVG_SHEME: &str = r#"<g id="none-copy-2646" stroke="none" stroke-width="1"
         </g>
     </g>"#;
 
+fn remove_empty_paths(svg_content: &str) -> String {
+    // Регулярное выражение для поиска пустых path элементов
+    let re = Regex::new(r#"<path\s+d\s*=\s*""\s[^>]*/>"#).unwrap();
+    re.replace_all(svg_content, "").to_string()
+}
 pub fn save_ready_logo(
     image: RgbaImage,
     job_id: u32,
@@ -59,6 +65,7 @@ pub fn save_ready_logo(
     // Если векторизация большого размера используем PNG
     let logo_svg = if should_use_vector {
         let transform = LogoTransform::calculate_transform(&image);
+        let vector_svg_logo = remove_empty_paths(&vector_svg_logo);
 
         format!(
             r#"<!-- Curved SVG  -->
