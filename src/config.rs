@@ -247,4 +247,12 @@ impl Config {
             self.rework_svg_folder(),
         ]
     }
+
+    pub fn clean_folders(&self) -> Vec<PathBuf> {
+        vec![
+            self.download_folder(),
+            self.upscale_folder(),
+            self.crop_folder(),
+        ]
+    }
 }

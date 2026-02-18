@@ -8,7 +8,11 @@ use image::{DynamicImage, GenericImageView, ImageBuffer, ImageReader, Rgb, Rgba}
 use indicatif::ProgressBar;
 use log::{error, info};
 use palette::Srgb;
+use std::env;
 use std::error::Error;
+use std::fs;
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
 
@@ -311,31 +315,86 @@ fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + 
 //     }
 // }
 
-pub async fn upscale_images(config: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Usage: upscayl-bin -i infile -o outfile [options]...
-    //
-    //     -h                   show this help
-    //     -i input-path        input image path (jpg/png/webp) or directory
-    //     -o output-path       output image path (jpg/png/webp) or directory
-    //     -z model-scale       scale according to the model (can be 2, 3, 4. default=4)
-    //     -s output-scale      custom output scale (can be 2, 3, 4. default=4)
-    //     -r resize            output to dimension (default=WxH:default), use '-r help' for more details
-    //     -w width             resize output to a width (default=W:default), use '-r help' for more details
-    //     -c compress          compression of the output image, default 0 and varies to 100
-    //     -t tile-size         tile size (>=32/0=auto, default=0) can be 0,0,0 for multi-gpu
-    //     -m model-path        folder path to the pre-trained models. default=models
-    //     -n model-name        model name (default=realesrgan-x4plus, can be realesr-animevideov3 | realesrgan-x4plus-anime | realesrnet-x4plus or any other model)
-    //     -g gpu-id            gpu device to use (default=auto) can be 0,1,2 for multi-gpu
-    //     -j load:proc:save    thread count for load/proc/save (default=1:2:2) can be 1:2,2,2:2 for multi-gpu
-    //     -x                   enable tta mode
-    //     -f format            output image format (jpg/png/webp, default=ext/png)
-    //     -v                   verbose output
+fn extract_upscale_resources(
+) -> Result<(std::path::PathBuf, std::path::PathBuf), Box<dyn std::error::Error>> {
+    let temp_dir = std::env::temp_dir();
+    // Определение всех ресурсов для upscale
+    let resources = [
+        (
+            "bin/realesrgan-ncnn-vulkan",
+            include_bytes!(
+                "../resources/realesrgan-ncnn-vulkan-20220424-macos/realesrgan-ncnn-vulkan"
+            ) as &[u8],
+        ),
+        (
+            "models/realesrgan-x4plus.bin",
+            include_bytes!(
+                "../resources/realesrgan-ncnn-vulkan-20220424-macos/models/realesrgan-x4plus.bin"
+            ),
+        ),
+        (
+            "models/realesrgan-x4plus.param",
+            include_bytes!(
+                "../resources/realesrgan-ncnn-vulkan-20220424-macos/models/realesrgan-x4plus.param"
+            ),
+        ),
+    ];
 
-    let input_path = config.crop_folder();
-    let output_path = config.upscale_folder();
+    let program_path = temp_dir.join(resources[0].0);
+
+    for (rel_path, data) in resources.iter() {
+        let full_path = temp_dir.join(rel_path);
+        fs::create_dir_all(full_path.parent().unwrap())?;
+        fs::write(&full_path, data)?;
+
+        // Установка прав на выполнение для программ в bin
+        if rel_path.starts_with("bin/") {
+            #[cfg(target_os = "macos")]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = fs::metadata(&full_path)?.permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&full_path, perms)?;
+            }
+        }
+    }
+
+    Ok((program_path, temp_dir))
+}
+
+pub async fn upscale_images(config: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
+    //   Usage: realesrgan-ncnn-vulkan.exe -i infile -o outfile [options]...
+    //
+    //       -h                   show this help
+    //       -i input-path        input image path (jpg/png/webp) or directory
+    //       -o output-path       output image path (jpg/png/webp) or directory
+    //       -s scale             upscale ratio (can be 2, 3, 4. default=4)
+    //       -t tile-size         tile size (>=32/0=auto, default=0) can be 0,0,0 for multi-gpu
+    //       -m model-path        folder path to the pre-trained models. default=models
+    //       -n model-name        model name (default=realesr-animevideov3, can be realesr-animevideov3 | realesrgan-x4plus | realesrgan-x4plus-anime | realesrnet-x4plus)
+    //       -g gpu-id            gpu device to use (default=auto) can be 0,1,2 for multi-gpu
+    //       -j load:proc:save    thread count for load/proc/save (default=1:2:2) can be 1:2,2,2:2 for multi-gpu
+    //       -x                   enable tta mode"
+    //       -f format            output image format (jpg/png/webp, default=ext/png)
+    //       -v                   verbose output
+
+    // Извлечение программы
+    let (program_path, temp_path) =
+        extract_upscale_resources().expect("Ошибка сохранения ресурсов upscale");
+    let current_dir = env::current_dir().expect("Невозможно получить текущий каталог");
+
+    let input_path = current_dir.join("Logo/Crop"); //config.crop_folder());
+    let output_path = current_dir.join("Logo/Upscale"); //config.upscale_folder());
+                                                        // let upscayl_models_path = current_dir.join(config.upscayl_models());
+
+    info!(
+        "Путь до upscaler {:?} текущая директория:{:?} временная директория upscaler:{:?}",
+        program_path.to_str(),
+        current_dir.to_str(),
+        temp_path.to_str()
+    );
 
     const SCALE: usize = 4;
-    const COMPRESSION: usize = 100;
     const TYPE: &str = "png";
 
     let args = [
@@ -348,19 +407,20 @@ pub async fn upscale_images(config: &Config) -> Result<(), Box<dyn Error + Send 
             .to_str()
             .ok_or("Неверный путь для вывода файлов для апскейла")?,
         "-m",
-        config.upscayl_models(),
+        "models",
         "-n",
-        config.upscayl_model(),
+        "realesrgan-x4plus",
         "-s",
         &SCALE.to_string(),
         "-f",
         TYPE,
-        "-v",
-        "-c",
-        &COMPRESSION.to_string(),
+        // "-v",
     ];
 
-    let status = Command::new(config.upscayl_bin()).args(args).status()?;
+    let status = Command::new(program_path)
+        .current_dir(&temp_path)
+        .args(args)
+        .status()?;
 
     if !status.success() {
         return Err(format!("Ошибка апскейла: {}", input_path.display()).into());

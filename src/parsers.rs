@@ -74,6 +74,7 @@ impl DataItem {
 #[serde(rename_all = "camelCase")]
 pub struct Attachment {
     pub url: String,
+    pub id: u32,
 }
 
 impl UrlType {
@@ -91,7 +92,7 @@ impl UrlType {
     pub fn from_attachments(attachments: &[Attachment]) -> UrlType {
         attachments
             .into_iter()
-            .next()
+            .max_by_key(|x| x.id)
             .map(|attachment| UrlType::JSONJob(attachment.url.clone()))
             .unwrap_or(UrlType::None)
     }

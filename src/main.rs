@@ -1,6 +1,6 @@
 use logoLoader::{
-    create_dir, download_images, images_works_parallel, remove_border_parallel, setup_logger,
-    upscale_images, Config, Jobs,
+    create_dir, delete_dir, download_images, images_works_parallel, remove_border_parallel,
+    setup_logger, upscale_images, Config, Jobs,
 };
 use std::error::Error;
 use std::path::Path;
@@ -24,7 +24,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         download_images(&logos, &config).await?;
     }
 
-    let logos = Jobs::generate_job_from_dir_images(&config.download_folder().display().to_string())?;
+    let logos =
+        Jobs::generate_job_from_dir_images(&config.download_folder().display().to_string())?;
 
     remove_border_parallel(&logos, &config).await?;
 
@@ -32,6 +33,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         upscale_images(&config).await?;
     }
     images_works_parallel(&logos, &config).await?;
+
+    for folder in config.clean_folders() {
+        delete_dir(&folder)?;
+    }
 
     Ok(())
 }

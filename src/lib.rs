@@ -22,6 +22,14 @@ pub fn create_dir(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+pub fn delete_dir(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if dir.exists() {
+        std::fs::remove_dir_all(dir)?;
+        log::info!("Удалена директория: {}", dir.display());
+    }
+    Ok(())
+}
+
 pub fn test(str: &str) -> String {
     let mut res = format!("Тестовый вызов библиотеки {str}");
     res.truncate(100);
