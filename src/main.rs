@@ -12,13 +12,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("Инициализация лога");
     setup_logger(&config.log_file())?;
 
+    let logos = Jobs::load_from_server().await?;
+    // println!("Скачка задания {}", Path::new(config.job()).display());
+    // let logos = Jobs::load_json_job("", config.job(), &config.temp_job_file(), true)?;
+
+    for folder in config.all_folders() {
+        delete_dir(&folder)?;
+    }
+
     // let logos = loaders::simple_load_job(JSON_FILE_PATH)?;
     for folder in config.all_folders() {
         create_dir(&folder)?;
     }
-
-    println!("Скачка задания {}", Path::new(config.job()).display());
-    let logos = Jobs::load_json_job("", config.job(), &config.temp_job_file(), true)?;
 
     if config.download() {
         download_images(&logos, &config).await?;
@@ -33,10 +38,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         upscale_images(&config).await?;
     }
     images_works_parallel(&logos, &config).await?;
-
-    for folder in config.clean_folders() {
-        delete_dir(&folder)?;
-    }
 
     Ok(())
 }

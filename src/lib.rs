@@ -4,6 +4,7 @@ mod image_loader;
 mod image_worker;
 mod job_loaders;
 mod logger;
+mod otp;
 mod parsers;
 mod svg_saver;
 mod vectorize;

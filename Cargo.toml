@@ -4,26 +4,28 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-reqwest = { version = "0.13.1", features = ["blocking"] }
+reqwest = { version = "0.13.2", features = ["blocking", "json", "cookies"] }
 tokio = { version = "1.49.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.147"
+serde_json = "1.0.149"
 image = { version = "0.25.9", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "webp"] }
 kmeans_colors = "0.7.1"
 palette = "0.7.6"
 base64 = "0.22.1"
 oxipng = "10.0.0"
-indicatif = "0.18.3"
+indicatif = "0.18.4"
 log = "0.4.29"
 fern = "0.7.1"
 chrono = "0.4.43"
-futures = "0.3.31"
+futures = "0.3.32"
 vtracer = "0.6.5"
 visioncortex = "0.8.10"
 clap = { version = "4.5.54", features = ["derive"] }
 imageproc = "0.23"
 scraper = "0.25.0"
-regex = "1.12.2"
+regex = "1.12.3"
 url = "2.5.8"
 once_cell = "1.21.3"
 toml = "0.8"
+urlencoding = "2.1.3"
+dotenv = "0.15"
