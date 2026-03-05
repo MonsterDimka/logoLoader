@@ -12,9 +12,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("Инициализация лога");
     setup_logger(&config.log_file())?;
 
-    let logos = Jobs::load_from_server().await?;
+    let login = std::env::var("login").expect("Environment variable 'login' not set");
+    let password = std::env::var("password").expect("Environment variable 'password' not set");
+
+    let logos = Jobs::load_from_server(login.as_str(), password.as_str(), None).await?;
     // println!("Скачка задания {}", Path::new(config.job()).display());
     // let logos = Jobs::load_json_job("", config.job(), &config.temp_job_file(), true)?;
+
+    if logos.logos.is_empty() {
+        println!("Нет заданий");
+        return Ok(());
+    }
 
     for folder in config.all_folders() {
         delete_dir(&folder)?;

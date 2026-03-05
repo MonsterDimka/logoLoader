@@ -115,34 +115,38 @@ impl Jobs {
         jobs
     }
 
-    pub async fn load_from_server() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let auth_service = AuthenticationService::new("https://app.advisa.ru/master");
+    pub async fn load_from_server(
+        login: &str,
+        password: &str,
+        otp_code: Option<String>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let auth_url = "https://app.advisa.ru/master";
+        let auth_service = AuthenticationService::new(auth_url);
 
-        // // Проверка авторизации
-        // auth_service.check_login().await;
         println!("Авторизация на ADVISA");
-        let login = std::env::var("login").expect("Environment variable 'login' not set");
-        let password = std::env::var("password").expect("Environment variable 'password' not set");
 
         // Логин
         match auth_service.login(&login, &password).await {
             Ok(_) => {
-                println!("Успешный логин. Введите одноразовый код:");
-                let mut code = String::new();
-                std::io::stdin()
-                    .read_line(&mut code)
-                    .expect("Failed to read line");
-                let code = code.trim();
+                println!("Успешный логин. Пожалуйста введите одноразовый код:");
+
+                let code = otp_code.unwrap_or_else(|| {
+                    let mut otp_code = String::new();
+                    std::io::stdin()
+                        .read_line(&mut otp_code)
+                        .expect("Ошибка ввода одноразового пароля");
+                    otp_code.trim().to_string()
+                });
 
                 // OTP логин
                 if auth_service.is_otp_required().unwrap_or(false) {
-                    match auth_service.login_otp(code).await {
-                        Ok(_) => println!("OTP login successful"),
-                        Err(e) => println!("OTP login failed: {}", e.message()),
+                    match auth_service.login_otp(code.as_str()).await {
+                        Ok(_) => println!("OTP успешный"),
+                        Err(e) => println!("Ошибка OTP пароля: {}", e.message()),
                     }
                 }
             }
-            Err(e) => println!("Login failed: {}", e.message),
+            Err(e) => println!("Ошибка логина: {}", e.message),
         }
 
         #[derive(Debug, Serialize, Deserialize)]
@@ -187,15 +191,6 @@ impl Jobs {
             let data: Data = serde_json::from_str::<Data>(&response_text)?;
             // println!("data: {data:?}");
             let jobs = Self::json_to_jobs(&data);
-            // Сохранить задачу на всякий случай
-
-            // let api_response: Root = response.json().await?;
-            // println!("Ответ от сервера: {:?}", api_response);
-            //
-            // let jobs = Self::json_to_jobs(&api_response);
-            // println!("{:?}", api_response);
-            // Ok(jobs)510099
-            // Ok(Self::empty())
             Ok(jobs)
         } else {
             println!("Ошибка запроса: {}", response.status());

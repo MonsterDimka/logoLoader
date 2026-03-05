@@ -81,7 +81,9 @@ impl AuthenticationService {
             user: Arc::new(RwLock::new(None)),
             last_error: Arc::new(RwLock::new(None)),
             otp: Arc::new(RwLock::new(None)),
-            http_client: Client::builder().cookie_store(true).build().unwrap(),
+            http_client: Client::builder()
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .cookie_store(true).build().unwrap(),
             login_error_map: error_map,
         }
     }
@@ -138,7 +140,18 @@ impl AuthenticationService {
             urlencoding::encode(password)
         );
 
-        match self.http_client.post(&url).json("{}").send().await {
+        println!("Sending request to: {}", url);
+
+        match self
+            .http_client
+            .post(&url)
+            .header(reqwest::header::USER_AGENT, "MyTauriApp/1.0")
+            // .header(reqwest::header::USER_AGENT, "Mozilla/5.0 (Tauri App)")
+            // .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+        {
             Ok(response) => {
                 let status = response.status();
                 if status.is_success() {

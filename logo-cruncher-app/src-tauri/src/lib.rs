@@ -1,5 +1,6 @@
 use commands::process_json;
 use logoLoader::{test, Config, Jobs, LogoJob};
+use serde::de::Unexpected::Option;
 use std::fs;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_dialog::DialogExt;
@@ -12,6 +13,18 @@ fn greet(app: AppHandle, name: &str) -> String {
     let res = format!("Hello, {}! Привет из раста!", name);
     app.emit("event-greet-finished", &res).unwrap();
     res
+}
+
+#[tauri::command]
+async fn getLogos(app: AppHandle, code: usize) {
+    println!("Загрузка заданий с сервера по коду {}", code);
+
+    let logos = Jobs::load_from_server("", "", Some(code.to_string()))
+        .await
+        .unwrap();
+    println!("Результаты {:?}", logos);
+    // let res = format!("Загрузка заданий с сервера по коду", code);
+    // app.emit("event-greet-finished", &res).unwrap();
 }
 
 #[tauri::command]
@@ -53,6 +66,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
+            getLogos,
             get_file_list,
             commands::process_json
         ])

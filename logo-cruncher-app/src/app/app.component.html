@@ -21,6 +21,10 @@
     <div class="flex flex-row gap-5">
         <div class="basis-1/4">
             <h4>Заявки</h4>
+
+            <div><input type="number" #code placeholder="Enter Code" class="input"/>
+                <button type="button" class="btn" (click)="getAccess(+code.value)">Получить заявки</button>
+            </div>
             <form (submit)="processJson($event, jsonInput.value)">
                 <fieldset class="fieldset">
                     <!--                    <legend class="fieldset-legend">Список&nbsp;заявок&nbsp;на&nbsp;логотипы</legend>-->

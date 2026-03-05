@@ -117,7 +117,6 @@ export class AppComponent implements OnInit, OnDestroy {
     greet(): void {
         let name = this.logos.map((value, index) => index + ") id:" + value.id + " url:" + value.url).join(",");
 
-        // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
         invoke<string>("greet", {name}).then(async (text) => {
             this.greetingMessage = text;
 
@@ -137,8 +136,14 @@ export class AppComponent implements OnInit, OnDestroy {
         // invoke<string>("logo_list", {msg: this.dirs}).then(async (dirs) => {
         //     this.greetingMessage = dirs;
         // });
+    }
 
+    getAccess(code: number): void {
+        console.log("Доступ", code);
 
+        invoke<string>("getLogos", {code}).then(async () => {
+            console.log("getLogos Done");
+        });
     }
 
     // Пример вызова

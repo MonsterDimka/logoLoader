@@ -189,18 +189,24 @@ async fn process_single_logo(
         big_image_name.display()
     );
 
+    let background = DominantColor::from_rgba_image(small_image.to_rgb8())?;
+    if background.score > MIN_SCORE_DOMINANT_COLOR {
+        background.remove_image_background(&mut final_image);
+        final_image = trim_transparent_border(&mut final_image);
+    }
+
     // Получение доминирующего в изображении цвета (цвета фона) если картинка прозрачная то цвет фона белый
-    let background = if !has_alpha {
-        // Удаление фона
-        let background = DominantColor::from_rgba_image(small_image.to_rgb8())?;
-        if background.score > MIN_SCORE_DOMINANT_COLOR {
-            background.remove_image_background(&mut final_image);
-            final_image = trim_transparent_border(&mut final_image);
-        }
-        background
-    } else {
-        DominantColor::white()
-    };
+    // let background = if !has_alpha {
+    //     // Удаление фона
+    //     let background = DominantColor::from_rgba_image(small_image.to_rgb8())?;
+    //     if background.score > MIN_SCORE_DOMINANT_COLOR {
+    //         background.remove_image_background(&mut final_image);
+    //         final_image = trim_transparent_border(&mut final_image);
+    //     }
+    //     background
+    // } else {
+    //     DominantColor::white()
+    // };
 
     // Выбор цвета фона серый для белого фона и доминантный для остальных
     let background = if white_bg_replace_gray && background.average > WHITE_COLOR {
