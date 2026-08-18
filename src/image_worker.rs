@@ -107,6 +107,7 @@ async fn remove_border(
 
 pub async fn images_works_parallel(
     jobs: &Jobs,
+    all_jobs: &Jobs,
     config: &Config,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let bar = ProgressBar::new(jobs.logos.len() as u64);
@@ -130,13 +131,14 @@ pub async fn images_works_parallel(
             let result_folder = result_folder.clone();
             let bar = bar.clone();
             async move {
+                let logo_id = logo.id;
                 let r = process_single_logo(
                     logo,
                     task_id,
                     &download_folder,
                     &upscale_folder,
                     &result_folder,
-                    false,
+                    all_jobs.is_terminal(logo_id),
                 )
                 .await;
                 bar.inc(1);
@@ -170,7 +172,7 @@ async fn process_single_logo(
     download_folder: &Path,
     upscale_folder: &Path,
     result_folder: &Path,
-    white_bg_replace_gray: bool,
+    is_terminal: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let id = logo.id;
 
@@ -178,10 +180,25 @@ async fn process_single_logo(
     let small_image_name = download_folder.join(format!("{}", id));
     let big_image_name = upscale_folder.join(format!("{}", id));
 
-    // Загружаем изображения
+    // Загружаем мелкое изображения
     let small_image = load_image(&small_image_name)?;
-    let has_alpha = has_alpha_channel(&small_image);
-    let mut final_image = load_image(&big_image_name)?.to_rgba8();
+
+    // Загружаем большое изображение
+    let big_image = load_image(&big_image_name)?;
+
+    // Загружаем как RGBA8
+    let mut final_image = big_image.to_rgba8();
+
+    // Проверяем наличие альфа-канала
+    if has_alpha_channel(&big_image) {
+        // Сплющиваем с белым фоном
+        let flattened = flatten_alpha_channel(DynamicImage::ImageRgba8(final_image));
+        final_image = flattened.to_rgba8();
+    }
+
+    // let mut has_alpha = has_alpha_channel(&small_image);
+    // let mut final_image = load_image(&big_image_name)?.to_rgba8();
+    // let mut final_image = flatten_alpha_channel(load_image(&big_image_name)?).to_rgba8();
 
     info!(
         "Таска {task} обработки начата. Задача:{id} Файлы для обработки: {} {}",
@@ -195,26 +212,44 @@ async fn process_single_logo(
         final_image = trim_transparent_border(&mut final_image);
     }
 
+    // // Если прозрачка то плющим фон
+    // if !has_alpha {
+    //     final_image = flatten_alpha_channel(DynamicImage::ImageRgba8(final_image)).to_rgba8();
+    //     has_alpha = false;
+    // }
+
     // Получение доминирующего в изображении цвета (цвета фона) если картинка прозрачная то цвет фона белый
     // let background = if !has_alpha {
-    //     // Удаление фона
-    //     let background = DominantColor::from_rgba_image(small_image.to_rgb8())?;
-    //     if background.score > MIN_SCORE_DOMINANT_COLOR {
-    //         background.remove_image_background(&mut final_image);
-    //         final_image = trim_transparent_border(&mut final_image);
-    //     }
+    //     println!("{} без прозрачки", small_image_name.display(),);
+    // Удаление фона
+    let background = DominantColor::from_rgba_image(small_image.to_rgb8())?;
+    if background.score > MIN_SCORE_DOMINANT_COLOR {
+        println!(
+            "{} обнаружен фоновый цвет RGB({} {} {})  удаляем его из картинки )",
+            small_image_name.display(),
+            background.color.red,
+            background.color.green,
+            background.color.blue,
+        );
+        background.remove_image_background(&mut final_image);
+        final_image = trim_transparent_border(&mut final_image);
+    }
     //     background
     // } else {
+    //     // println!("плющим прозрачку {}", task);
+    //     println!("прозрачка {} белый фон", small_image_name.display(),);
     //     DominantColor::white()
     // };
 
-    // Выбор цвета фона серый для белого фона и доминантный для остальных
-    let background = if white_bg_replace_gray && background.average > WHITE_COLOR {
+    // Заменяем белый фон на серый если логотип терминала
+    let background = if is_terminal && background.average > WHITE_COLOR {
+        println!("{} серый фон терминалов", small_image_name.display(),);
         DominantColor {
             color: GRAY_BACKGROUND_COLOR,
             ..background
         }
     } else {
+        println!("{} оригинальный фон", small_image_name.display(),);
         background
     };
 
@@ -223,18 +258,26 @@ async fn process_single_logo(
     let percent = (background.score * 100.0) as u16;
 
     // Логирование
-    info!(
-        "{} Доминирующий цвет: RGB({} {} {})  Всего: {}% k: {}",
+    println!(
+        "{} Доминирующий цвет: RGB({} {} {})  Всего: {}% k: {} Терминал: {} ",
         small_image_name.display(),
         background.color.red,
         background.color.green,
         background.color.blue,
         percent,
-        background.k
+        background.k,
+        is_terminal,
     );
 
     // Создание SVG
-    save_ready_logo(final_image, id, background, &new_image_name, true)?;
+    save_ready_logo(
+        final_image,
+        id,
+        background,
+        &new_image_name,
+        true,
+        is_terminal,
+    )?;
 
     info!(
         "{} Таска закончена. Задача:{} Файлы для обработки: {} {} Сохранение {}",
@@ -297,29 +340,29 @@ fn load_image(image_name: &Path) -> Result<DynamicImage, Box<dyn Error + Send + 
     Ok(image)
 }
 
-// fn flatten_alpha_channel(image: DynamicImage) -> DynamicImage {
-//     match image {
-//         DynamicImage::ImageRgba8(rgba_image) => {
-//             // Конвертируем RGBA в RGB с белым фоном
-//             let (width, height) = rgba_image.dimensions();
-//             let mut rgb_image = ImageBuffer::new(width, height);
-//
-//             for (x, y, pixel) in rgba_image.enumerate_pixels() {
-//                 let Rgba([r, g, b, a]) = pixel;
-//                 if *a == 255 {
-//                     // Полностью непрозрачный - просто копируем RGB
-//                     rgb_image.put_pixel(x, y, Rgb([*r, *g, *b]));
-//                 } else {
-//                     rgb_image.put_pixel(x, y, Rgb([255, 255, 255]));
-//                 }
-//             }
-//             DynamicImage::ImageRgb8(rgb_image)
-//         }
-//
-//         // Для остальных типов изображений (RGB, Gray, etc.) оставляем как есть
-//         _ => image,
-//     }
-// }
+fn flatten_alpha_channel(image: DynamicImage) -> DynamicImage {
+    match image {
+        DynamicImage::ImageRgba8(rgba_image) => {
+            // Конвертируем RGBA в RGB с белым фоном
+            let (width, height) = rgba_image.dimensions();
+            let mut rgb_image = ImageBuffer::new(width, height);
+
+            for (x, y, pixel) in rgba_image.enumerate_pixels() {
+                let Rgba([r, g, b, a]) = pixel;
+                if *a == 255 {
+                    // Полностью непрозрачный - просто копируем RGB
+                    rgb_image.put_pixel(x, y, Rgb([*r, *g, *b]));
+                } else {
+                    rgb_image.put_pixel(x, y, Rgb([255, 255, 255]));
+                }
+            }
+            DynamicImage::ImageRgb8(rgb_image)
+        }
+
+        // Для остальных типов изображений (RGB, Gray, etc.) оставляем как есть
+        _ => image,
+    }
+}
 
 fn extract_upscale_resources(
 ) -> Result<(std::path::PathBuf, std::path::PathBuf), Box<dyn std::error::Error>> {

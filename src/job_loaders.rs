@@ -1,7 +1,10 @@
 use crate::otp::AuthenticationService;
 use crate::parsers::{Data, Root};
+use chrono::{DateTime, Datelike, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -9,12 +12,24 @@ use std::path::{Path, PathBuf};
 pub struct LogoJob {
     pub url: String,
     pub id: u32,
+    pub note: String,
 }
 
 impl LogoJob {
-    pub fn new(id: u32, url: String) -> Self {
-        Self { id, url }
+    pub fn new(id: u32, url: String, note: String) -> Self {
+        Self { id, url, note }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LogoRequest {
+    count: i32,
+    from: i32,
+    order_by: String,
+    direction: String,
+    priority: Option<String>,
+    statuses: Vec<String>,
+    filter: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -30,11 +45,21 @@ impl Jobs {
     /// Загрузка задачи по созданию логотипов
     pub fn load_database_json_job(
         json_file_path: &str,
-    ) -> Result<Jobs, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let json_content = fs::read_to_string(json_file_path)?;
         let logos: Vec<LogoJob> = serde_json::from_str(&json_content)?;
         println!("Загружено заданий: {}", logos.len());
         Ok(Jobs { logos })
+    }
+
+    //поиск терминала по id
+    pub fn is_terminal(&self, id: u32) -> bool {
+        let TERMINAl = "для терминалов";
+        //Логотип для терминалов, не должен быть на белом фоне
+        self.logos
+            .iter()
+            .find(|x| x.id == id)
+            .is_some_and(|x| x.note.contains(TERMINAl))
     }
 
     /// Создание задачи по обработке логотипов на основе изображений из директории
@@ -66,14 +91,19 @@ impl Jobs {
             .filter_map(|entry| {
                 let p = entry.path();
                 // Если расширения нет, file_stem() вернёт имя файла целиком.
+                println!(
+                    "Файл {:#?}",
+                    p.file_stem().unwrap().to_str().unwrap().parse::<u32>()
+                );
+
                 p.file_stem()
                     .and_then(|stem| stem.to_str())
                     .and_then(|stem| stem.parse::<u32>().ok())
-                    .map(|id| LogoJob::new(id, EMPTY_URL.to_string()))
+                    .map(|id| LogoJob::new(id, EMPTY_URL.to_string(), String::new()))
             })
             .collect();
 
-        println!("Создано заданий: {}", logos.len());
+        println!("Создано заданий: {} {:#?}", logos.len(), logos);
         Ok(Jobs { logos })
     }
 
@@ -109,9 +139,11 @@ impl Jobs {
             .flatten()
             .collect();
 
-        println!("Обнаружено заданий {}", logos.len());
+        // println!("Обнаружено заданий {:?} {}", logos, logos.len());
 
         let jobs = Jobs { logos };
+        // println!("Задания: \n {:?}", jobs);
+
         jobs
     }
 
@@ -139,62 +171,71 @@ impl Jobs {
                 });
 
                 // OTP логин
-                if auth_service.is_otp_required().unwrap_or(false) {
-                    match auth_service.login_otp(code.as_str()).await {
-                        Ok(_) => println!("OTP успешный"),
-                        Err(e) => println!("Ошибка OTP пароля: {}", e.message()),
-                    }
+                match auth_service.login_otp(code.as_str()).await {
+                    Ok(_) => println!("OTP успешный"),
+                    Err(e) => println!("Ошибка OTP пароля: {}", e.message()),
                 }
             }
             Err(e) => println!("Ошибка логина: {}", e.message),
         }
 
-        #[derive(Debug, Serialize, Deserialize)]
-        struct LogoRequest {
-            count: i32,
-            from: i32,
-            order_by: String,
-            direction: String,
-            priority: String,
-            statuses: Vec<String>,
-            filter: String,
-        }
-
         // URL для запроса
         let url = "https://app.advisa.ru/master/service/logoRequest/list";
 
-        // Формируем тело запроса
-        let request_body = LogoRequest {
-            count: 1000,
+        // Формируем тело запроса на новые логотипы
+        let new_logo_request = LogoRequest {
+            count: 1500,
             from: 0,
             order_by: "CREATED".to_string(),
             direction: "DESC".to_string(),
-            priority: "HIGH".to_string(),
+            // priority: None,
+            priority: Some("HIGH".to_string()), // только логотипы с высоким приоритетом логотипы
             statuses: vec!["OPEN".to_string()],
             filter: "".to_string(),
         };
 
+        // Формируем тело запроса на новые логотипы
+        let ready_logo_request = LogoRequest {
+            count: 500,
+            from: 0,
+            order_by: "UPDATED".to_string(),
+            direction: "DESC".to_string(),
+            priority: None,
+            statuses: vec!["DONE".to_string()],
+            filter: "".to_string(),
+        };
+
         // Отправляем POST запрос
-        let response = auth_service
+        let response_new_logo = auth_service
             .http_client
             .post(url)
-            .json(&request_body)
+            .json(&new_logo_request)
             .send()
             .await?;
 
         // Проверяем статус ответа
-        if response.status().is_success() {
+        if response_new_logo.status().is_success() {
             // Читаем ответ как текст (можно также десериализовать в структуру)
-            let response_text = response.text().await?;
-            // println!("Ответ от сервера: {}", response_text);
+            let response_new_logo_text = response_new_logo.text().await?;
+            let new_logo_data: Data = serde_json::from_str::<Data>(&response_new_logo_text)?;
+            let jobs = Self::json_to_jobs(&new_logo_data);
 
-            let data: Data = serde_json::from_str::<Data>(&response_text)?;
-            // println!("data: {data:?}");
-            let jobs = Self::json_to_jobs(&data);
+            // кусочек подсчета сделанных логотипов
+            // let response_ready_logo = auth_service
+            //     .http_client
+            //     .post(url)
+            //     .json(&ready_logo_request)
+            //     .send()
+            //     .await?;
+            //
+            // let response_ready_logo_text = response_ready_logo.text().await?;
+            // let ready_logo_data: Data = serde_json::from_str::<Data>(&response_ready_logo_text)?;
+            // Self::json_count(&ready_logo_data);
+
             Ok(jobs)
         } else {
-            println!("Ошибка запроса: {}", response.status());
-            let error_text = response.text().await?;
+            println!("Ошибка запроса: {}", response_new_logo.status());
+            let error_text = response_new_logo.text().await?;
             println!("Детали ошибки: {}", error_text);
             Ok(Self::empty())
         }

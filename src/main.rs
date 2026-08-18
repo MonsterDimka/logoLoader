@@ -12,40 +12,48 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("Инициализация лога");
     setup_logger(&config.log_file())?;
 
-    let login = std::env::var("login").expect("Environment variable 'login' not set");
-    let password = std::env::var("password").expect("Environment variable 'password' not set");
-
-    let logos = Jobs::load_from_server(login.as_str(), password.as_str(), None).await?;
-    // println!("Скачка задания {}", Path::new(config.job()).display());
+    // let login = std::env::var("login").expect("Environment variable 'login' not set");
+    // let password = std::env::var("password").expect("Environment variable 'password' not set");
+    //
+    // let logos = Jobs::load_from_server(login.as_str(), password.as_str(), None).await?;
     // let logos = Jobs::load_json_job("", config.job(), &config.temp_job_file(), true)?;
+    let logos = Jobs::generate_job_from_dir_images(
+        "/Users/kapustindmitri/RustroverProjects/logoLoader/Logo/Raw",
+    )?;
+    // let logos = Jobs::load_database_json_job("job.json")?;
+    // println!("Скачка задания {}", Path::new(config.job()).display());
+    println!("Скачка задания {:#?}", logos);
 
-    if logos.logos.is_empty() {
-        println!("Нет заданий");
-        return Ok(());
-    }
+    // if logos.logos.is_empty() {
+    //     println!("Нет заданий");
+    //     return Ok(());
+    // }
+    //
+    // for folder in config.all_folders() {
+    //     delete_dir(&folder)?;
+    // }
+    //
+    // // let logos = loaders::simple_load_job(JSON_FILE_PATH)?;
+    // for folder in config.all_folders() {
+    //     create_dir(&folder)?;
+    // }
+    //
+    // if config.download() {
+    //     download_images(&logos, &config).await?;
+    // }
 
-    for folder in config.all_folders() {
-        delete_dir(&folder)?;
-    }
+    let all_logos = logos.clone();
 
-    // let logos = loaders::simple_load_job(JSON_FILE_PATH)?;
-    for folder in config.all_folders() {
-        create_dir(&folder)?;
-    }
-
-    if config.download() {
-        download_images(&logos, &config).await?;
-    }
-
-    let logos =
+    let logos_for_work =
         Jobs::generate_job_from_dir_images(&config.download_folder().display().to_string())?;
 
-    remove_border_parallel(&logos, &config).await?;
+    remove_border_parallel(&logos_for_work, &config).await?;
 
     if config.upscale() {
         upscale_images(&config).await?;
     }
-    images_works_parallel(&logos, &config).await?;
+
+    images_works_parallel(&logos_for_work, &all_logos, &config).await?;
 
     Ok(())
 }

@@ -13,8 +13,8 @@ const MAX_VECTOR_LOGO_SIZE: usize = 100;
 const KILOBYTE: usize = 1024;
 const PNG_OPTIMIZE: u8 = 4;
 const WIDTH_HEIGHT: usize = 300;
-const LOGO_SCALE_FACTOR: f64 = 0.8; //0.65;
-
+const INN_LOGO_SCALE_FACTOR: f64 = 0.8;
+const TERMINAL_LOGO_SCALE_FACTOR: f64 = 0.65;
 const SVG_SHEME: &str = r#"<g id="none-copy-2646" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
     <g id="Group" opacity="0.2" stroke="Black">
             <g id="Group">
@@ -39,6 +39,7 @@ pub fn save_ready_logo(
     background_color: DominantColor,
     output_path: &Path,
     optimize: bool,
+    is_terminal: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let base64_png_logo = make_png_base64(&image, optimize)?;
     let vector_svg_logo = vectorize::image_vectorize_to_svg(&image)?;
@@ -61,10 +62,15 @@ pub fn save_ready_logo(
             background_color.score
         )
     };
+    let scale_factor = if is_terminal {
+        TERMINAL_LOGO_SCALE_FACTOR
+    } else {
+        INN_LOGO_SCALE_FACTOR
+    };
 
     // Если векторизация большого размера используем PNG
     let logo_svg = if should_use_vector {
-        let transform = LogoTransform::calculate_transform(&image);
+        let transform = LogoTransform::calculate_transform(&image, scale_factor);
         let vector_svg_logo = remove_empty_paths(&vector_svg_logo);
 
         format!(
@@ -80,7 +86,11 @@ pub fn save_ready_logo(
         let transform = if background_color.score < 0.5 {
             LogoTransform::full_size()
         } else {
-            LogoTransform::calculate_png_transform(&image, &output_path.display().to_string())
+            LogoTransform::calculate_png_transform(
+                &image,
+                &output_path.display().to_string(),
+                scale_factor,
+            )
             // (LOGO_SCALE_FACTOR, offset_x, offset_y)
         };
         format!(
@@ -126,11 +136,11 @@ struct LogoTransform {
 }
 
 impl LogoTransform {
-    fn calculate_transform(image: &RgbaImage) -> LogoTransform {
+    fn calculate_transform(image: &RgbaImage, scale_factor: f64) -> LogoTransform {
         let (w, h) = (image.width() as f64, image.height() as f64);
         let target = WIDTH_HEIGHT as f64;
 
-        let scale = (target / w).min(target / h) * LOGO_SCALE_FACTOR;
+        let scale = (target / w).min(target / h) * scale_factor;
         let offset_x = (target - w * scale) / 2.0;
         let offset_y = (target - h * scale) / 2.0;
 
@@ -141,10 +151,10 @@ impl LogoTransform {
         }
     }
 
-    fn calculate_png_transform(image: &RgbaImage, name: &str) -> LogoTransform {
+    fn calculate_png_transform(image: &RgbaImage, name: &str, scale_factor: f64) -> LogoTransform {
         let (width, height) = (image.width() as f64, image.height() as f64);
         let target = WIDTH_HEIGHT as f64;
-        let scale = LOGO_SCALE_FACTOR;
+        let scale = scale_factor;
 
         let scaled_size = target * scale;
         let offset = (target - scaled_size) / 2.0;
